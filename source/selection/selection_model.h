@@ -1,33 +1,58 @@
 #pragma once
+
 #include <stdio.h>
 #include <vector>
 #include <map>
 #include <string>
+
+
 using namespace std;
-namespace selection{
-	struct Sequence
-		{
-		public:
+
+
+namespace mimir {
+    
+	struct Sequence { 
+    public:
 			string* aminoacide;
 			string* V;
 			string* J;
 			Sequence(string* aa,string* v,string* j):aminoacide(aa),V(v),J(j)
 			{};
+        
 			~Sequence(){
 				delete aminoacide;
 				delete V;
 				delete J;
 			}
+        
+    };
 
-		};
-
-	class selection_model
-	{
+	class SelectionModel {
 	public:
-		selection_model(void);
-		~selection_model(void);
+
+        /**
+         * DOCS HERE
+         */
+		SelectionModel(void);
+
+
+        /**
+         *
+         */
+		~SelectionModel(void);
+
+
+        /**
+         *
+         */
 		void fit(vector<Sequence>* data_seq,vector<Sequence>* gen_seq);
-		void predict_Q(Sequence* seq);
+
+
+        /**
+         *
+         */
+		void predict(Sequence* seq);
+        
 	private:
 		static const float EPS;
 		static const int MAX_STEP;

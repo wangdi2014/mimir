@@ -1,5 +1,7 @@
 #include "selection_model.h"
-using namespace selection;
+
+
+using namespace mimir;
 
 const float selection_model::EPS=0.1;
 const int selection_model::MAX_STEP=10000;
