@@ -28,6 +28,9 @@ namespace mimir {
     };
 
 
+    typedef std::vector<Sequence> SequenceVector;
+
+
 	class SelectionModel {
 	public:
 
@@ -46,13 +49,13 @@ namespace mimir {
         /**
          *
          */
-		void fit(vector<Sequence>* data_seq,vector<Sequence>* gen_seq);
+		void fit(const SequenceVector &data_seq, const SequenceVector &gen_seq);
 
 
         /**
          *
          */
-		void predict(Sequence* seq);
+		void predict(const Sequence &seq);
         
 	private:
 		static const float EPS;
@@ -70,20 +73,20 @@ namespace mimir {
 		float* q_ilA;
 		float Z;
 
-		float Q(Sequence* seq);
+		float Q(const Sequence &seq);
 
 		inline float getLProbabilityInData(int L){
 			if(L<minL||L>maxL)
 				return 0;
 			return data_Ldistribution[L];
 		}
-		void findMinMaxLength(vector<Sequence>* data_seq,vector<Sequence>* gen_seq);
-		float* evalfDataLDistribution(vector<Sequence>* data_seq,int minL,int maxL,int minFrequency);
-		map<string,int>* extractVSet(vector<Sequence>* data_seq,vector<Sequence>* gen_seq);
-		map<string,int>* extractJSet(vector<Sequence>* data_seq,vector<Sequence>* gen_seq);
+		void findMinMaxLength(const SequenceVector &data_seq, const SequenceVector &gen_seq);
+		float* evalfDataLDistribution(const SequenceVector &data_seq, int minL, int maxL, int minFrequency);
+		map<string,int>* extractVSet(const SequenceVector &data_seq, const SequenceVector &gen_seq);
+		map<string,int>* extractJSet(const SequenceVector &data_seq, const SequenceVector &gen_seq);
 
-		void evalf_gen_Ldistribution(vector<Sequence>* gen_seq,int minFrequency,float* l_distribution);
-		float evalf_Z(vector<Sequence>* gen_seq);
+		void evalf_gen_Ldistribution(const SequenceVector &gen_seq, int minFrequency, float* l_distribution);
+		float evalf_Z(const SequenceVector &gen_seq);
 
 	};
 }
