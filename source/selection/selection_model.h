@@ -13,16 +13,14 @@ namespace mimir {
     
 	struct Sequence { 
     public:
-			string* aminoacide;
-			string* V;
-			string* J;
-			Sequence(string* aa,string* v,string* j):aminoacide(aa),V(v),J(j)
+			string aminoacide;
+			string V;
+			string J;
+			Sequence(string aa,string v,string j):aminoacide(aa),V(v),J(j)
 			{};
         
 			~Sequence(){
-				delete aminoacide;
-				delete V;
-				delete J;
+				
 			}
         
     };
@@ -55,7 +53,15 @@ namespace mimir {
         /**
          *
          */
-		void predict(const Sequence &seq);
+		float predict(const Sequence &seq);
+		float* predictMany(const SequenceVector &seq);
+
+
+		float* get_q_L(){return q_L;};
+		float* get_q_VJ(){return q_VJ;};
+		float* get_ilA(){return q_ilA;};
+		float getZ(){return Z;};
+
         
 	private:
 		static const float EPS;
@@ -85,7 +91,9 @@ namespace mimir {
 		map<string,int>* extractVSet(const SequenceVector &data_seq, const SequenceVector &gen_seq);
 		map<string,int>* extractJSet(const SequenceVector &data_seq, const SequenceVector &gen_seq);
 
-		void evalf_gen_Ldistribution(const SequenceVector &gen_seq, int minFrequency, float* l_distribution);
+		void evalf_gen_Ldistribution(const SequenceVector &gen_seq, float* l_distribution);
+		void evalf_gen_VJdistribution(const SequenceVector &gen_seq,float* VJ_distribution);
+		void evalf_gen_AAdistribution(const SequenceVector &gen_seq,float* AA_distribution);
 		float evalf_Z(const SequenceVector &gen_seq);
 
 	};
