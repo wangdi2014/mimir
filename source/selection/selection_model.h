@@ -1,9 +1,13 @@
 #pragma once
 
 #include <stdio.h>
+#include <fstream>
+#include <sstream>
 #include <vector>
 #include <map>
 #include <string>
+#include <Eigen/Dense>
+#include<Eigen/Sparse>
 
 
 using namespace std;
@@ -68,22 +72,25 @@ namespace mimir {
         /**
          *
          */
-		void fit(const SequenceVector &data_seq,  SequenceVector &gen_seq);
-
+		void fit(SequenceVector &data_seq,  SequenceVector &gen_seq);
+		double evalfMaxDelta(SequenceVector &gen_seq,double alpha,double* F,double* emptyArray,int Lsize,int VJsize,int AAsize);
+		double evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &data_seq,double alpha,double* F,int Lsize,int VJsize,int AAsize);
+		double optimizeStep(SequenceVector &gen_seq,SequenceVector &data_seq,double* F,double* emptyArray,int Lsize,int VJsize,int AAsize,double* maxDelt);
+		void fit_Newtown(SequenceVector &data_seq,  SequenceVector &gen_seq);
 
         /**
          *
          */
-		float predict(const Sequence &seq);
-		float* predictMany(const SequenceVector &seq);
+		double predict(const Sequence &seq);
+		double* predictMany(const SequenceVector &seq);
 
 
-		float* get_q_L(){return q_L;};
-		float* get_q_VJ(){
+		double* get_q_L(){return q_L;};
+		double* get_q_VJ(){
 			return q_VJ;
 		};
-		float* get_ilA(){return q_ilA;};
-		float getZ(){return Z;};
+		double* get_ilA(){return q_ilA;};
+		double getZ(){return Z;};
 		int getMinL(){return minL;};
 		int getMaxL(){return maxL;};
 
@@ -93,37 +100,37 @@ namespace mimir {
 
         
 	private:
-		static const float EPS;
+		static const double EPS;
 		static const int MAX_STEP;
 		int minL,maxL;
 		map<string,int>* V_indexes, * J_indexes;
 		map<char,int> SelectionModel::aminoAcidIndexes;
 
-		float* data_Ldistribution;
-		float* data_VJpairDistribution;
-		float* data_AAdistibution;
+		double* data_Ldistribution;
+		double* data_VJpairDistribution;
+		double* data_AAdistibution;
 
-		float* q_L;
-		float* q_VJ;
-		float* q_ilA;
-		float Z;
+		double* q_L;
+		double* q_VJ;
+		double* q_ilA;
+		double Z;
 
-		float Q(const Sequence &seq);
+		double Q(const Sequence &seq);
 
-		inline float getLProbabilityInData(int L){
+		inline double getLProbabilityInData(int L){
 			if(L<minL||L>maxL)
 				return 0;
 			return data_Ldistribution[L];
 		}
 		void findMinMaxLength(const SequenceVector &data_seq, const SequenceVector &gen_seq);
-		float* evalfDataLDistribution(const SequenceVector &data_seq, int minL, int maxL, int minFrequency);
+		double* evalfDataLDistribution(const SequenceVector &data_seq, int minL, int maxL, int minFrequency);
 		map<string,int>* extractVSet(const SequenceVector &data_seq, const SequenceVector &gen_seq);
 		map<string,int>* extractJSet(const SequenceVector &data_seq, const SequenceVector &gen_seq);
 
-		void evalf_gen_Ldistribution(const SequenceVector &gen_seq, float* l_distribution);
-		void evalf_gen_VJdistribution(const SequenceVector &gen_seq,float* VJ_distribution);
-		void evalf_gen_AAdistribution(const SequenceVector &gen_seq,float* AA_distribution);
-		float evalf_Z(const SequenceVector &gen_seq);
+		void evalf_gen_Ldistribution(const SequenceVector &gen_seq, double* l_distribution);
+		void evalf_gen_VJdistribution(const SequenceVector &gen_seq,double* VJ_distribution);
+		void evalf_gen_AAdistribution(const SequenceVector &gen_seq,double* AA_distribution);
+		double evalf_Z(const SequenceVector &gen_seq);
 
 		void transformData(SequenceVector *seq);
 	};

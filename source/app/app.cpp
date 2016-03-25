@@ -10,6 +10,7 @@
 #include <iostream>
 #include "selection_model.h"
 
+
 using namespace std;
 using namespace mimir;
 
@@ -22,13 +23,13 @@ void split(string &str, char delimiter,vector<string> &internal) {
 	string tok;
   
 	while(std::getline(ss, tok, delimiter)) {
-		internal.push_back(tok);
+		internal.push_back(tok.substr(0, tok.find(",", 0)));
 	}
   
 }
 
 void parse_data_file(char* path,vector<Sequence>& out){
-	out.reserve(200000);
+	out.reserve(350000);
 	ifstream file(path);
 
     string line; 
@@ -49,7 +50,7 @@ void parse_data_file(char* path,vector<Sequence>& out){
 }
 
 void parse_gen_file(char* path,vector<Sequence>& out){
-	out.reserve(200000);
+	out.reserve(350000);
 	ifstream file(path);
     string line; 
 	vector<string> words;
@@ -69,10 +70,10 @@ void parse_gen_file(char* path,vector<Sequence>& out){
 	}
 }
 
-void writeToSingleJson(SelectionModel &model,char* pathToExportFolder){
+void writeToSingleJson(SelectionModel &model,char* path){
 	ofstream file;
-	float* L=model.get_q_L();
-	file.open(pathToExportFolder+string("//coefs.json"));
+	double* L=model.get_q_L();
+	file.open(path);
 	file<<"{\n\t\"L\":{\n\t\t";
 	int minL=model.getMinL();
 	int maxL=model.getMaxL();
@@ -109,7 +110,7 @@ void writeToSingleJson(SelectionModel &model,char* pathToExportFolder){
 	}
 	file<<"},\n";
 
-	float* q_VJ=model.get_q_VJ();
+	double* q_VJ=model.get_q_VJ();
 	file<<"\t\t\"q_VJ\":[";
 
 	first=true;
@@ -129,7 +130,7 @@ void writeToSingleJson(SelectionModel &model,char* pathToExportFolder){
 	//write aminoacide
 	file<<"\t\"q_Li\":{\n";
 	map<char,int>* aminoAcidIndexes=model.getAAindexes();
-	float* q_ilA=model.get_ilA();
+	double* q_ilA=model.get_ilA();
 	first=true;
 
 	for(map<char,int>::iterator it=aminoAcidIndexes->begin();it!=aminoAcidIndexes->end();it++){
@@ -165,21 +166,21 @@ void writeToSingleJson(SelectionModel &model,char* pathToExportFolder){
 	file.close();
 }
 
-int _tmain(int argc, _TCHAR* argv[])
+int _tmain(int argc, char* argv[])
 {
 	vector<Sequence> gen;
 	vector<Sequence> data;
 	
 	cout<<"start parsing data file\n";
-	parse_data_file("C://immunology//github//mimir//build//Debug//data.txt",data);
+	parse_data_file(argv[1],data);
 	cout<<"start parsing gen file\n";
-	parse_gen_file("C://immunology//github//mimir//build//Debug//gen.txt",gen);
+	parse_gen_file(argv[2],gen);
 
 	SelectionModel* S=new SelectionModel();
 	cout<<"start fiting\n";
 	S->fit(data,gen);
 	cout<<"fit done";
-	writeToSingleJson(*S,"");
+	writeToSingleJson(*S,"coef.json");
 
 
 	return 0;

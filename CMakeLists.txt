@@ -7,6 +7,8 @@ project(mimir)
 file(GLOB SelectionSources "source/selection/*.h" "source/selection/*.cpp")
 file(GLOB AppSources "source/app/*.cpp")
 
+
+include_directories(${CMAKE_SOURCE_DIR}/eigen)
 include_directories(${CMAKE_SOURCE_DIR}/source/selection)
 include_directories(${CMAKE_SOURCE_DIR}/source/app)
 
