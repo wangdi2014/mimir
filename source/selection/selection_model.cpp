@@ -1,10 +1,11 @@
 #include "selection_model.h"
+#include<time.h>
 
 
 using namespace mimir;
 
 const double SelectionModel::EPS=0.001;
-const int SelectionModel::MAX_STEP=200;
+const int SelectionModel::MAX_STEP=300;
 
 map<char,int> init_aa_map(){
 	map<char,int> aa_map;
@@ -71,6 +72,7 @@ SelectionModel::~SelectionModel(void)
 }
 
 void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq){
+	srand(time(NULL));
 	findMinMaxLength(data_seq, gen_seq);
 	data_Ldistribution = evalfDataLDistribution(data_seq, minL, maxL, 1000);
 	int newMinL,newMaxL;
@@ -146,14 +148,14 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq){
 
 	//initialize start parametr
 	q_L=new double[maxL-minL+1];
-	for(int i=0;i<(maxL-minL+1);i++) q_L[i]=1;
+	for(int i=0;i<(maxL-minL+1);i++) q_L[i]=((double) rand() / (RAND_MAX))+0.5;
 	//memset(q_L,0,sizeof(double)*(maxL-minL+1));
 	q_VJ=new double[V_indexes->size()*J_indexes->size()];
 	//memset(q_VJ,0,sizeof(double)*V_indexes->size()*J_indexes->size());
-	for(int i=0;i<(V_indexes->size()*J_indexes->size());i++) q_VJ[i]=1;
+	for(int i=0;i<(V_indexes->size()*J_indexes->size());i++) q_VJ[i]=((double) rand() / (RAND_MAX))+0.5;
 	q_ilA=new double[(maxL-minL+1)*maxL*aminoAcidIndexes.size()];
 	//memset(q_ilA,0,sizeof(double)*(maxL-minL+1)*(maxL-minL+1)*aminoAcidIndexes.size());
-	for(int i=0;i<((maxL-minL+1)*maxL*aminoAcidIndexes.size());i++) q_ilA[i]=1;
+	for(int i=0;i<((maxL-minL+1)*maxL*aminoAcidIndexes.size());i++) q_ilA[i]=((double) rand() / (RAND_MAX))+0.5;
 	Z=1.0;
 
 
@@ -194,7 +196,7 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq){
 	}
 
 	ofstream file;
-	file.open("C://immunology//github//mimir//build//Debug//log_likehood");
+	file.open("C://immunology//github//mimir//build//Debug//log_likehood_4");
 
 	while(counter<MAX_STEP&&abs(gradient_step)>0.01){
 		counter++;

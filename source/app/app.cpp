@@ -180,7 +180,7 @@ int _tmain(int argc, char* argv[])
 	cout<<"start fiting\n";
 	S->fit(data,gen);
 	cout<<"fit done";
-	writeToSingleJson(*S,"coef.json");
+	writeToSingleJson(*S,argv[3]);
 
 
 	return 0;
