@@ -178,7 +178,7 @@ int _tmain(int argc, char* argv[])
 
 	SelectionModel* S=new SelectionModel();
 	cout<<"start fiting\n";
-	S->fit(data,gen);
+	S->fit(data,gen,stoi(argv[4]));
 	cout<<"fit done";
 	writeToSingleJson(*S,argv[3]);
 

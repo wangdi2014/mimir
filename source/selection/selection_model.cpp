@@ -71,7 +71,7 @@ SelectionModel::~SelectionModel(void)
 	delete[] q_ilA;
 }
 
-void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq){
+void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int max_iter){
 	srand(time(NULL));
 	findMinMaxLength(data_seq, gen_seq);
 	data_Ldistribution = evalfDataLDistribution(data_seq, minL, maxL, 1000);
@@ -198,7 +198,7 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq){
 	ofstream file;
 	file.open("C://immunology//github//mimir//build//Debug//log_likehood_4");
 
-	while(counter<MAX_STEP&&abs(gradient_step)>0.01){
+	while(counter<max_iter){
 		counter++;
 		double newVal;
 		delt=0;
