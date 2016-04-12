@@ -104,7 +104,7 @@ namespace mimir {
 		static const int MAX_STEP;
 		int minL,maxL;
 		map<string,int>* V_indexes, * J_indexes;
-		map<char,int> SelectionModel::aminoAcidIndexes;
+		map<char,int> aminoAcidIndexes;
 
 		double* data_Ldistribution;
 		double* data_VJpairDistribution;
