@@ -1,4 +1,4 @@
-// test.cpp: определяет точку входа для консольного приложения.
+// test.cpp: пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
 //
 #include <fstream>
 #include <string>
@@ -6,7 +6,6 @@
 
 
 #include <stdio.h>
-#include <tchar.h>
 #include <iostream>
 #include "selection_model.h"
 
@@ -373,7 +372,7 @@ void writeClusterToSingleJson(SelectionModel &model, string& path,int n_cluster)
 }
 
 
-int _tmain(int argc, char* argv[])
+int main(int argc, char* argv[])
 {
 	vector<Sequence> gen;
 	vector<Sequence> data;
