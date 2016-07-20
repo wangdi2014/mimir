@@ -18,14 +18,29 @@ namespace mimir {
 	struct Sequence { 
     public:
 			string aminoacide;
-			string V;
-			string J;
+			vector<string> V;
+			vector<string> J;
 			int* aminoacide_indexes;
-			int Vindex;
-			int Jindex;
+			int* Vindex;
+			int* Jindex;
+			float W_count;
+			float* weights;
 			bool valid;
-			Sequence(string aa,string v,string j):aminoacide(aa),V(v),J(j)
+			Sequence(string aa,vector<string> v,vector<string> j):aminoacide(aa),V(v),J(j)
 			{
+				valid=true;
+				W_count=1;
+				aminoacide_indexes=NULL;
+			};
+			Sequence(string aa,vector<string> v,vector<string> j,float w):aminoacide(aa),V(v),J(j),W_count(w)
+			{
+				valid=true;
+				aminoacide_indexes=NULL;
+			};
+			Sequence(string aa,string v,string j):aminoacide(aa)
+			{
+				V.push_back(v);
+				J.push_back(j);
 				valid=true;
 				aminoacide_indexes=NULL;
 			};
@@ -44,8 +59,18 @@ namespace mimir {
 						break;
 					}
 				}
-				Vindex=V_indexes[V];
-				Jindex=J_indexes[J];
+				Vindex=new int[V.size()];
+				Jindex=new int[J.size()];
+				for(int i=0;i<V.size();i++){
+					Vindex[i]=V_indexes[V[i]];
+				}
+				for(int i=0;i<J.size();i++){
+					Jindex[i]=J_indexes[J[i]];
+				}
+				weights=new float[V.size()*J.size()];
+				for(int i=0;i<V.size()*J.size();i++){
+					weights[i]=1.0/(V.size()*J.size());
+				}
 			}
         
     };
@@ -73,10 +98,10 @@ namespace mimir {
          *
          */
 		void fit(SequenceVector &data_seq,  SequenceVector &gen_seq,int max_iter);
+		void evalfP_gen(SequenceVector &gen_seq);
 		double evalfMaxDelta(SequenceVector &gen_seq,double alpha,double* F,double* emptyArray,int Lsize,int VJsize,int AAsize);
 		double evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &data_seq,double alpha,double* F,int Lsize,int VJsize,int AAsize);
 		double optimizeStep(SequenceVector &gen_seq,SequenceVector &data_seq,double* F,double* emptyArray,int Lsize,int VJsize,int AAsize,double* maxDelt);
-		void fit_Newtown(SequenceVector &data_seq,  SequenceVector &gen_seq);
 
         /**
          *
@@ -84,12 +109,20 @@ namespace mimir {
 		double predict(const Sequence &seq);
 		double* predictMany(const SequenceVector &seq);
 
+		double* Gw ;
+		double* Dw ;
 
 		double* get_q_L(){return q_L;};
-		double* get_q_VJ(){
-			return q_VJ;
-		};
+		double* get_q_VJ(){return q_VJ;};
 		double* get_ilA(){return q_ilA;};
+
+		double* get_cluster_L(int i) { return cluster_L+i*(maxL - minL + 1); };
+		double* get_cluster_VJ(int i) { return cluster_VJ+i*(V_indexes->size()*J_indexes->size()); };
+		double* get_cluster_ilA(int i) { return cluster_ilA+i*((maxL - minL + 1)*maxL*aminoAcidIndexes.size()); };
+
+		double* get_Pgen_L(){return gen_L;};
+		double* get_Pgen_VJ(){	return gen_VJ;};
+		double* get_Pgen_ilA(){return gen_ilA;};
 		double getZ(){return Z;};
 		int getMinL(){return minL;};
 		int getMaxL(){return maxL;};
@@ -113,6 +146,19 @@ namespace mimir {
 		double* q_L;
 		double* q_VJ;
 		double* q_ilA;
+
+		double* cluster_L;
+		double* cluster_VJ;
+		double* cluster_ilA;
+		
+		
+
+		double* gen_L;
+		double* gen_VJ;
+		double* gen_ilA;
+
+
+
 		double Z;
 
 		double Q(const Sequence &seq);

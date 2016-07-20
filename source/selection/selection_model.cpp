@@ -34,9 +34,6 @@ map<char,int> init_aa_map(){
 	
 }
 
-
-
-
 SelectionModel::SelectionModel(void)
 {
 	V_indexes=NULL;
@@ -71,9 +68,54 @@ SelectionModel::~SelectionModel(void)
 	delete[] q_ilA;
 }
 
+void SelectionModel::evalfP_gen(SequenceVector &gen_seq){
+	const int Lsize = maxL - minL + 1;
+	const int VJsize = V_indexes->size()*J_indexes->size();
+	const int AAsize = (maxL - minL + 1)*maxL*aminoAcidIndexes.size();
+	const int fullSize=Lsize+VJsize+AAsize;
+
+	gen_L=new double[maxL-minL+1];
+	memset(gen_L,0,sizeof(double)*(maxL-minL+1));
+	gen_VJ=new double[V_indexes->size()*J_indexes->size()];
+	memset(gen_VJ,0,sizeof(double)*(V_indexes->size()*J_indexes->size()));
+	gen_ilA=new double[(maxL-minL+1)*maxL*aminoAcidIndexes.size()];
+	memset(gen_ilA,0,sizeof(double)*((maxL-minL+1)*maxL*aminoAcidIndexes.size()));
+
+	float Qsum=0;
+	for (int i = 0; i < gen_seq.size(); i++){
+
+			int v_in = gen_seq[i].Vindex[0];
+			int j_in = gen_seq[i].Jindex[0];
+			if(gen_seq[i].aminoacide.length()<minL||gen_seq[i].aminoacide.length()>maxL)
+				continue;
+			int Lindex = gen_seq[i].aminoacide.length() - minL;
+			int VJindex=v_in*J_indexes->size() + j_in;
+			int L = gen_seq[i].aminoacide.length();
+			
+			Qsum+=1;
+			gen_L[Lindex] += 1;
+			gen_VJ[VJindex] += 1;
+			for (int j = 0; j<L; j++){
+				int aa_index = gen_seq[i].aminoacide_indexes[j] * (maxL - minL + 1)*maxL + (L - minL)*maxL + j;
+				gen_ilA[aa_index] += 1;
+			}
+	}
+	printf("Qsum::::%f",Qsum);
+	for(int i=0;i<Lsize;i++){
+		gen_L[i]=gen_L[i]/Qsum;
+	}
+	for(int i=0;i<VJsize;i++){
+		gen_VJ[i]=gen_VJ[i]/Qsum;
+	}
+	for(int i=0;i<AAsize;i++){
+		gen_ilA[i]=gen_ilA[i]/Qsum;
+	}
+}
+
 void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int max_iter){
 	srand(time(NULL));
 	findMinMaxLength(data_seq, gen_seq);
+	
 	data_Ldistribution = evalfDataLDistribution(data_seq, minL, maxL, 1000);
 	int newMinL,newMaxL;
 	for(int l=minL;l<=maxL;l++){
@@ -95,32 +137,46 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 	data_Ldistribution=new double[maxL-minL+1];
 	memset(data_Ldistribution,0,sizeof(double)*(maxL-minL+1));
 	int N = 0;
+	long total_sum = 0;
 	for(int i=0;i<data_seq.size();i++){
 		if(data_seq[i].aminoacide.size()>=minL&&data_seq[i].aminoacide.size()<=maxL){
 			N+=1;
-			data_Ldistribution[data_seq[i].aminoacide.size()-minL]+=1;
+			total_sum += data_seq[i].W_count;
+			data_Ldistribution[data_seq[i].aminoacide.size()-minL]+=data_seq[i].W_count;
 		}
 	}
-	for(int i=0;i<newMaxL-newMinL+1;i++){
-		data_Ldistribution[i]/=(double)N;
-	}
 	
+
 	V_indexes = extractVSet(data_seq, gen_seq);
 	J_indexes = extractJSet(data_seq, gen_seq);
+
+	
+	transformData(&gen_seq);
+	transformData(&data_seq);
+
+
 
 	data_VJpairDistribution = new double[V_indexes->size()*J_indexes->size()];
 	memset(data_VJpairDistribution, 0, sizeof(double)*V_indexes->size()*J_indexes->size());
 
 
 	for (int i = 0; i < data_seq.size(); i++){
-		int v_index = (*V_indexes)[data_seq[i].V];
-		int j_index = (*J_indexes)[data_seq[i].J];
-		if(data_seq[i].aminoacide.length()>=minL&&data_seq[i].aminoacide.length()<=maxL){
-			data_VJpairDistribution[v_index*J_indexes->size() + j_index] += 1;
+		for(int v_counter=0;v_counter<data_seq[i].V.size();v_counter++){
+			for(int j_counter=0;j_counter<data_seq[i].J.size();j_counter++){
+				int v_in = data_seq[i].Vindex[v_counter];
+				int j_in = data_seq[i].Jindex[j_counter];
+
+				float w = data_seq[i].weights[v_counter*data_seq[i].J.size() + j_counter] * data_seq[i].W_count;
+				
+				if(data_seq[i].aminoacide.length()>=minL&&data_seq[i].aminoacide.length()<=maxL){
+					data_VJpairDistribution[v_in*J_indexes->size() + j_in] += w;
+				}
+			}
 		}
 	}
 	for (int i = 0; i < V_indexes->size()*J_indexes->size(); i++)
-		data_VJpairDistribution[i] /= (double)N;
+		data_VJpairDistribution[i] /= (double)total_sum;
+
 
 	//initialize aaDistribution
 	data_AAdistibution = new double[(maxL - minL + 1)*maxL*aminoAcidIndexes.size()];
@@ -132,14 +188,20 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 				char sym = data_seq[i].aminoacide[j];
 				if (sym != '*'&&sym != '~'){
 					int aa_index = aminoAcidIndexes.at(sym);
-					data_AAdistibution[aa_index*(maxL - minL + 1)*maxL + (L - minL)*maxL + j] += 1;
+					data_AAdistibution[aa_index*(maxL - minL + 1)*maxL + (L - minL)*maxL + j] += data_seq[i].W_count;
 				}
 			}
 		}
 	}
-	for (int i = 0; i < (maxL - minL + 1)*maxL*aminoAcidIndexes.size(); i++)
-		data_AAdistibution[i] /= (double)N;
+	for (int i = 0; i < maxL - minL + 1; i++) 
+		for(int j=0;j<maxL;j++)
+			for(int k=0;k<aminoAcidIndexes.size();k++)
+				data_AAdistibution[k*(maxL - minL + 1)*maxL+i*maxL+j] /= data_Ldistribution[i];
+	
 
+	for (int i = 0;i<newMaxL - newMinL + 1;i++) {
+		data_Ldistribution[i] /= (double)total_sum;
+	}
 
 	const int Lsize = maxL - minL + 1;
 	const int VJsize = V_indexes->size()*J_indexes->size();
@@ -173,28 +235,11 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 	//main loop
 	double gradient_step=1;
 
-	transformData(&gen_seq);
-	transformData(&data_seq);
 
-	int* non_zero_indexes=new int[fullSize];
-	memset(non_zero_indexes,0,fullSize*sizeof(int));
-	for (int i = 0; i < gen_seq.size(); i++){
 
-		int v_in = gen_seq[i].Vindex;
-		int j_in = gen_seq[i].Jindex;
-		if(gen_seq[i].aminoacide.length()>=minL&&gen_seq[i].aminoacide.length()<=maxL){ 
-			int Lindex = gen_seq[i].aminoacide.length() - minL;
-			int L = gen_seq[i].aminoacide.length();
-			non_zero_indexes[Lindex]+=1;
-			non_zero_indexes[Lsize+v_in*J_indexes->size()+j_in]+=1;
-			for (int k = 0; k < L; k++){
-				int aa_index = gen_seq[i].aminoacide_indexes[k]* (maxL - minL + 1)*maxL + (L - minL)*maxL + k;
-				non_zero_indexes[Lsize+VJsize+aa_index]+=1;
-			}
-		}
+	
 
-	}
-
+	evalfP_gen(gen_seq);
 	ofstream file;
 	file.open("C://immunology//github//mimir//build//Debug//log_likehood_4");
 
@@ -206,8 +251,8 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 		memset(F,0,fullSize*sizeof(double));
 		for (int i = 0; i < gen_seq.size(); i++){
 
-			int v_in = gen_seq[i].Vindex;
-			int j_in = gen_seq[i].Jindex;
+			int v_in = gen_seq[i].Vindex[0];
+			int j_in = gen_seq[i].Jindex[0];
 			if(gen_seq[i].aminoacide.length()<minL||gen_seq[i].aminoacide.length()>maxL)
 				continue;
 			int Lindex = gen_seq[i].aminoacide.length() - minL;
@@ -229,8 +274,21 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 				F[aa_index] += q;
 			}
 		}
+		
+		for (int i = 0; i < maxL - minL + 1; i++)
+			for (int j = 0;j<maxL;j++)
+				for (int k = 0;k < aminoAcidIndexes.size();k++)
+				{
+					int index = k*(maxL - minL + 1)*maxL + i*maxL + j+Lsize+VJsize;
+					F[index] /= F[i];
+				}
+
+		for (int i = 0;i<Lsize + VJsize;i++) {
+			F[i] /= Qsum;
+		}
+
 		for(int i=0;i<fullSize;i++){
-			F[i]/=Qsum;
+			
 			if(F[i]!=0){
 				if(i<Lsize){
 					F[i]=(data_Ldistribution[i]-F[i])/q_L[i];
@@ -272,16 +330,16 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 
 	int i;
 	for(i=0;i<Lsize;i++){
-		if(non_zero_indexes[i]==0)
+		if(gen_L[i]==0)
 			q_L[i]=0;
 	}
-	for(;i<Lsize+VJsize;i++){
-		if(non_zero_indexes[i]==0)
-			q_VJ[i-Lsize]=0;
+	for(i=0;i<VJsize;i++){
+		if(gen_VJ[i]==0)
+			q_VJ[i]=0;
 	}
-	for(;i<fullSize;i++){
-		if(non_zero_indexes[i]==0)
-			q_ilA[i-VJsize-Lsize]=0;
+	for(i=0;i<AAsize;i++){
+		if(gen_ilA[i]==0)
+			q_ilA[i]=0;
 	}
 	file.close();
 	printf("delt %f \n",delt);
@@ -289,13 +347,14 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 
 
 }
+
 double SelectionModel::evalfMaxDelta(SequenceVector &gen_seq,double alpha,double* F,double* emptyArray,int Lsize,int VJsize,int AAsize){
 	int fullSize=Lsize+VJsize+AAsize;
 	double Qsum=0;
 	memset(emptyArray,0,sizeof(double)*fullSize);
 	for(int i=0;i<gen_seq.size();i++){
-		int v_in = gen_seq[i].Vindex;
-			int j_in = gen_seq[i].Jindex;
+		int v_in = gen_seq[i].Vindex[0];
+			int j_in = gen_seq[i].Jindex[0];
 			if(gen_seq[i].aminoacide.length()<minL||gen_seq[i].aminoacide.length()>maxL)
 				continue;
 			int Lindex = gen_seq[i].aminoacide.length() - minL;
@@ -340,52 +399,61 @@ double SelectionModel::evalfMaxDelta(SequenceVector &gen_seq,double alpha,double
 
 	return maxDelt;
 }
+
 double SelectionModel::evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &data_seq,double alpha,double* F,int Lsize,int VJsize,int AAsize){
 	int fullSize=Lsize+VJsize+AAsize;
 	double Qsum=0;
 	for(int i=0;i<gen_seq.size();i++){
-		int v_in = gen_seq[i].Vindex;
-			int j_in = gen_seq[i].Jindex;
-			if(gen_seq[i].aminoacide.length()<minL||gen_seq[i].aminoacide.length()>maxL)
-				continue;
-			int Lindex = gen_seq[i].aminoacide.length() - minL;
-			int VJindex=Lsize+v_in*J_indexes->size() + j_in;
-			int L = gen_seq[i].aminoacide.length();
-			double q = 1;
+				int v_in = gen_seq[i].Vindex[0];
+				int j_in = gen_seq[i].Jindex[0];
+				if(gen_seq[i].aminoacide.length()<minL||gen_seq[i].aminoacide.length()>maxL)
+					continue;
+				int Lindex = gen_seq[i].aminoacide.length() - minL;
+				int VJindex=Lsize+v_in*J_indexes->size() + j_in;
+				int L = gen_seq[i].aminoacide.length();
+				double q = 1;
 
-			for (int k = 0; k < L; k++){
-				int aa_index = gen_seq[i].aminoacide_indexes[k];
-				q *= q_ilA[aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k]+alpha*F[Lsize+VJsize+aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
+				for (int k = 0; k < L; k++){
+					int aa_index = gen_seq[i].aminoacide_indexes[k];
+					q *= q_ilA[aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k]+alpha*F[Lsize+VJsize+aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
 
-			}
-			q*=(q_VJ[v_in*J_indexes->size() + j_in]+alpha*F[Lsize+v_in*J_indexes->size() + j_in]) * (q_L[gen_seq[i].aminoacide.length() - minL]+alpha*F[gen_seq[i].aminoacide.length() - minL]);
-			Qsum+=q;
+				}
+				q*=(q_VJ[v_in*J_indexes->size() + j_in]+alpha*F[Lsize+v_in*J_indexes->size() + j_in]) * (q_L[gen_seq[i].aminoacide.length() - minL]+alpha*F[gen_seq[i].aminoacide.length() - minL]);
+				Qsum+=q;
 	}
 	double Z=Qsum/gen_seq.size();
 	double likehood=0;
 	for(int counter=0;counter<data_seq.size();counter++){
 		int i=counter;
 		if(data_seq[i].valid){
-			int v_in = data_seq[i].Vindex;
-			int j_in = data_seq[i].Jindex;
 			if(data_seq[i].aminoacide.length()<minL||data_seq[i].aminoacide.length()>maxL)
-				continue;
-			int Lindex = data_seq[i].aminoacide.length() - minL;
-			int VJindex=Lsize+v_in*J_indexes->size() + j_in;
-			int L = data_seq[i].aminoacide.length();
-			double q = 1;
+					continue;
+			for(int v_counter=0;v_counter<data_seq[i].V.size();v_counter++){
+				for(int j_counter=0;j_counter<data_seq[i].J.size();j_counter++){
 
-			for (int k = 0; k < L; k++){
-				int aa_index = data_seq[i].aminoacide_indexes[k];
-				q *= q_ilA[aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k]+alpha*F[Lsize+VJsize+aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
+						float w=data_seq[i].weights[v_counter*data_seq[i].J.size()+j_counter]*data_seq[i].W_count;
+						int v_in = data_seq[i].Vindex[v_counter];
+						int j_in = data_seq[i].Jindex[j_counter];
+				
+						int Lindex = data_seq[i].aminoacide.length() - minL;
+						int VJindex=Lsize+v_in*J_indexes->size() + j_in;
+						int L = data_seq[i].aminoacide.length();
+						double q = 1;
+
+						for (int k = 0; k < L; k++){
+							int aa_index = data_seq[i].aminoacide_indexes[k];
+							q *= q_ilA[aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k]+alpha*F[Lsize+VJsize+aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
+						}
+						q*=(q_VJ[v_in*J_indexes->size() + j_in]+alpha*F[Lsize+v_in*J_indexes->size() + j_in]) * (q_L[data_seq[i].aminoacide.length() - minL]+alpha*F[data_seq[i].aminoacide.length() - minL]);
+						likehood+=w*(log(q)-log(Z));
+				}
 			}
-			q*=(q_VJ[v_in*J_indexes->size() + j_in]+alpha*F[Lsize+v_in*J_indexes->size() + j_in]) * (q_L[data_seq[i].aminoacide.length() - minL]+alpha*F[data_seq[i].aminoacide.length() - minL]);
-			likehood+=log(q)-log(Z);
 		}
 	}
 	return likehood;
 
 }
+
 double SelectionModel::optimizeStep(SequenceVector &gen_seq,SequenceVector &data_seq,double* F,double* emptyArray,int Lsize,int VJsize,int AAsize,double* delt){
 	double phi=0.5*(1+sqrt(5));
 	double a=0;
@@ -412,298 +480,6 @@ double SelectionModel::optimizeStep(SequenceVector &gen_seq,SequenceVector &data
 	*delt=evalfMaxLikehood(gen_seq,data_seq,out,F,Lsize,VJsize,AAsize);
 	return out;
 }
-void SelectionModel::fit_Newtown(SequenceVector &data_seq, SequenceVector &gen_seq){
-	findMinMaxLength(data_seq, gen_seq);
-	data_Ldistribution = evalfDataLDistribution(data_seq, minL, maxL, 1000);
-	int newMinL,newMaxL;
-	for(int l=minL;l<=maxL;l++){
-		if(data_Ldistribution[l-minL]>1000){
-			newMinL=l;
-			break;
-		}
-	}
-	for(int l=maxL;l>=minL;l--){
-		if(data_Ldistribution[l-minL]>1000){
-			newMaxL=l;
-			break;
-		}
-	}
-	printf("minL %d,maxL %d",newMinL,newMaxL);
-	minL=newMinL;
-	maxL=newMaxL;
-	delete[] data_Ldistribution;
-	data_Ldistribution=new double[maxL-minL+1];
-	memset(data_Ldistribution,0,sizeof(double)*(maxL-minL+1));
-	int N = 0;
-	for(int i=0;i<gen_seq.size();i++){
-		if(gen_seq[i].aminoacide.size()>=minL&&gen_seq[i].aminoacide.size()<=maxL){
-			N+=1;
-			data_Ldistribution[gen_seq[i].aminoacide.size()-minL]+=1;
-		}
-	}
-	for(int i=0;i<newMaxL-newMinL+1;i++){
-		data_Ldistribution[i]/=(double)N;
-	}
-	
-
-	V_indexes = extractVSet(data_seq, gen_seq);
-	J_indexes = extractJSet(data_seq, gen_seq);
-
-	data_VJpairDistribution = new double[V_indexes->size()*J_indexes->size()];
-	memset(data_VJpairDistribution, 0, sizeof(double)*V_indexes->size()*J_indexes->size());
-
-
-	for (int i = 0; i < data_seq.size(); i++){
-		int v_index = (*V_indexes)[data_seq[i].V];
-		int j_index = (*J_indexes)[data_seq[i].J];
-		if(data_seq[i].aminoacide.length()>=minL&&data_seq[i].aminoacide.length()<=maxL){
-			data_VJpairDistribution[v_index*J_indexes->size() + j_index] += 1;
-		}
-	}
-	for (int i = 0; i < V_indexes->size()*J_indexes->size(); i++)
-		data_VJpairDistribution[i] /= (double)N;
-
-	//initialize aaDistribution
-	data_AAdistibution = new double[(maxL - minL + 1)*maxL*aminoAcidIndexes.size()];
-	memset(data_AAdistibution, 0, sizeof(double)*(maxL - minL + 1)*maxL*aminoAcidIndexes.size());
-	for (int i = 0; i < data_seq.size(); i++){
-		int L = data_seq[i].aminoacide.length();
-		if(L>=minL&&L<=maxL){
-			for (int j = 0; j < L; j++){
-				char sym = data_seq[i].aminoacide[j];
-				if (sym != '*'&&sym != '~'){
-					int aa_index = aminoAcidIndexes.at(sym);
-					data_AAdistibution[aa_index*(maxL - minL + 1)*maxL + (L - minL)*maxL + j] += 1;
-				}
-			}
-		}
-	}
-	for (int i = 0; i < (maxL - minL + 1)*maxL*aminoAcidIndexes.size(); i++)
-		data_AAdistibution[i] /= (double)N;
-
-
-	const int Lsize = maxL - minL + 1;
-	const int VJsize = V_indexes->size()*J_indexes->size();
-	const int AAsize = (maxL - minL + 1)*maxL*aminoAcidIndexes.size();
-
-
-	//initialize start parametr
-	q_L = new double[Lsize];
-	for (int i = 0; i < Lsize; i++) q_L[i] = 1;
-	//memset(q_L,0,sizeof(double)*(maxL-minL+1));
-	q_VJ = new double[VJsize];
-	//memset(q_VJ,0,sizeof(double)*V_indexes->size()*J_indexes->size());
-	for (int i = 0; i < VJsize; i++) q_VJ[i] = 1;
-	q_ilA = new double[AAsize];
-	//memset(q_ilA,0,sizeof(double)*(maxL-minL+1)*(maxL-minL+1)*aminoAcidIndexes.size());
-	for (int i = 0; i < AAsize; i++) q_ilA[i] = 1;
-	Z = 1.0;
-
-	const int fullSize = Lsize + VJsize + AAsize;
-
-	transformData(&gen_seq);
-
-	//initialize gen distribution
-	int* non_zero_indexes=new int[fullSize];
-	memset(non_zero_indexes,0,fullSize*sizeof(int));
-	for (int i = 0; i < gen_seq.size(); i++){
-
-		int v_in = gen_seq[i].Vindex;
-		int j_in = gen_seq[i].Jindex;
-		if(gen_seq[i].aminoacide.length()>=minL&&gen_seq[i].aminoacide.length()<=maxL){ 
-			int Lindex = gen_seq[i].aminoacide.length() - minL;
-			int L = gen_seq[i].aminoacide.length();
-			non_zero_indexes[Lindex]+=1;
-			non_zero_indexes[Lsize+v_in*J_indexes->size()+j_in]+=1;
-			for (int k = 0; k < L; k++){
-				int aa_index = gen_seq[i].aminoacide_indexes[k]* (maxL - minL + 1)*maxL + (L - minL)*maxL + k;
-				non_zero_indexes[Lsize+VJsize+aa_index]+=1;
-			}
-		}
-
-	}
-	int non_zero_counter=0;
-	for(int i=0;i<fullSize;i++){
-		if(non_zero_indexes[i]>200){
-			non_zero_indexes[i]=non_zero_counter;
-			non_zero_counter++;
-		}
-		else
-			non_zero_indexes[i]=-1;
-	}
-
-
-	int* non_zero_to_full=new int[non_zero_counter];
-	int k=0;
-	for(int i=0;i<fullSize;i++){
-		if(non_zero_indexes[i]>-1){
-			non_zero_to_full[k]=i;
-			k++;
-		}
-	}
-
-	//start iteration
-	double delt = 1;
-	int counter = 0;
-
-	//main loop
-	double gradient_step = 0.1;
-
-	
-	printf("L:%i,VJ:%i,AA:%d\n",Lsize,VJsize,AAsize);
-	printf("%i\n",non_zero_counter);
-	Eigen::MatrixXf J(non_zero_counter, non_zero_counter);
-	Eigen::VectorXf F(non_zero_counter);
-
-
-	while (delt > EPS){
-		double Qsum = 0;
-		J.setZero();
-		F.setZero();
-
-		for (int i = 0; i < gen_seq.size(); i++){
-
-			int v_in = gen_seq[i].Vindex;
-			int j_in = gen_seq[i].Jindex;
-			if(gen_seq[i].aminoacide.length()<minL||gen_seq[i].aminoacide.length()>maxL)
-				continue;
-			int Lindex = gen_seq[i].aminoacide.length() - minL;
-			int L = gen_seq[i].aminoacide.length();
-			double q = 1;
-
-			double* q_not_ilA = new double[L];
-			bool needToContinue=false;
-			for (int k = 0; k < L; k++){
-				q_not_ilA[k] = 1;
-				int aa_index = gen_seq[i].aminoacide_indexes[k];
-				if (non_zero_indexes[Lsize+VJsize+gen_seq[i].aminoacide_indexes[k] * (maxL - minL + 1)*maxL + (L - minL)*maxL + k]<0)
-				{
-					needToContinue=true;
-					break;
-				}
-				q *= q_ilA[aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
-				for (int j = 0; j < L; j++){
-					if (j != k){
-						q_not_ilA[k] *= q_ilA[aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + j];
-					}
-				}
-			}
-			if(needToContinue) continue;
-			Lindex=non_zero_indexes[Lindex];
-			int VJindex=non_zero_indexes[Lsize + v_in*J_indexes->size() + j_in];
-			if(Lindex==-1||VJindex==-1)
-				continue;
-			double fullQ = q*q_VJ[v_in*J_indexes->size() + j_in] * q_L[gen_seq[i].aminoacide.length() - minL];
-			Qsum += fullQ;
-
-			
-			
-
-			F[Lindex] += q*q_VJ[v_in*J_indexes->size() + j_in];
-			F[VJindex] += q*q_L[gen_seq[i].aminoacide.length() - minL];
-
-			
-			
-			J.data()[VJindex*non_zero_counter+Lindex]+=q;
-			J.data()[Lindex*non_zero_counter + VJindex] += q;
-	
-
-			for (int j = 0; j<L; j++){
-				int aa_index = non_zero_indexes[Lsize+VJsize+gen_seq[i].aminoacide_indexes[j] * (maxL - minL + 1)*maxL + (L - minL)*maxL + j];
-				if(aa_index==-1)
-					continue;
-				F[aa_index] += q_not_ilA[j]*q_VJ[v_in*J_indexes->size() + j_in] * q_L[gen_seq[i].aminoacide.length() - minL];
-				J.data()[Lindex*non_zero_counter + aa_index] += q_not_ilA[j]*q_VJ[v_in*J_indexes->size() + j_in];
-				J.data()[VJindex*non_zero_counter + aa_index] += q_not_ilA[j]*q_L[gen_seq[i].aminoacide.length() - minL];
-				J.data()[aa_index*non_zero_counter + Lindex] += q_not_ilA[j]*q_VJ[v_in*J_indexes->size() + j_in];
-				J.data()[aa_index*non_zero_counter + VJindex] += q_not_ilA[j]*q_L[gen_seq[i].aminoacide.length() - minL];			
-			}
-		}
-		
-		for(int i=0;i<non_zero_counter;i++){
-			F.data()[i]/=Qsum;
-		}
-		for (int i = 0; i < non_zero_counter; i++){
-			for (int j = 0; j < non_zero_counter; j++){
-				if(i==j){
-					J.data()[i*non_zero_counter+i]=F[i]*F[i];
-				}
-				else{
-					J.data()[j*non_zero_counter + i] /= -Qsum*Qsum;
-					J.data()[j*non_zero_counter + i]+=F[i]*F[j];
-				}
-			}
-		}
-		for(int i=0;i<non_zero_counter;i++){
-			F.data()[i]*=-1;
-			int full_index=non_zero_to_full[i];
-			if(full_index<Lsize){
-				J.data()[i*non_zero_counter+i]-=data_Ldistribution[full_index]/(q_L[full_index]*q_L[full_index]);
-				F.data()[i]+=data_Ldistribution[full_index]/(q_L[full_index]);
-				F.data()[i]*=-1;
-				continue;
-			}
-			if(full_index<VJsize){
-				J.data()[i*non_zero_counter+i]-=data_VJpairDistribution[full_index-Lsize]/(q_VJ[full_index-Lsize]*q_VJ[full_index-Lsize]);
-				F.data()[i]+=data_VJpairDistribution[full_index-Lsize]/(q_VJ[full_index-Lsize]);
-				F.data()[i]*=-1;
-				continue;
-			}
-			J.data()[i*non_zero_counter+i]-=data_AAdistibution[full_index-Lsize-VJsize]/(q_ilA[full_index-Lsize-VJsize]*q_ilA[full_index-Lsize-VJsize]);
-			F.data()[i]+=data_AAdistibution[full_index-Lsize-VJsize]/(q_ilA[full_index-Lsize-VJsize]);
-			//<------------
-			F.data()[i]*=-1;
-		}
-		
-		printf("%f\n",Qsum);
-		double min=9999;
-		double max=-9999;
-		double sum=0;
-		for (int i = 0; i < non_zero_counter; i++){
-			if(F[i]>max)
-				max=F[i];
-			if(F[i]<min)
-				min=F[i];
-		}
-		printf("%f,%f,%f\n",min,max,sum);
-
-		printf("%f,%f,%f,%f\n",F.data()[0],F.data()[1],J.data()[2],F.data()[3]);
-		printf("%f,%f\n,%f,%f\n",J.data()[0],J.data()[1],J.data()[non_zero_counter],J.data()[non_zero_counter+1]);
-		printf("determinant %f",J.determinant());
-	
-		Eigen::VectorXf deltaQ=J.ldlt().solve(F);
-
-		printf("solve!!!!!!   %f %f %f",deltaQ[0],deltaQ[1],deltaQ[2]);
-		
-		delt=0;
-		for (int i = 0; i < Lsize; i++){
-			int k=non_zero_indexes[i];
-			if(k>-1){
-				if(abs(deltaQ[k])>delt) delt=abs(deltaQ[k]);
-			
-				q_L[i]+=deltaQ[k];
-			}
-		}
-		for (int i = 0; i < VJsize; i++){
-			int k=non_zero_indexes[Lsize + i];
-			if(k>-1){
-			if(abs(deltaQ[k])>delt) delt=abs(deltaQ[k]);
-			
-				q_VJ[i]+=deltaQ[k];
-			}
-		}
-		for (int i = 0; i < AAsize; i++){
-			int k=non_zero_indexes[Lsize + VJsize + i];
-			if(k>-1){
-			if(abs(deltaQ[k])>delt) delt=abs(deltaQ[k]);
-			
-				q_ilA[i]+=deltaQ[k];
-			}
-		}
-		printf("\nmax delt %f\n",delt);
-	}
-	
-}
 
 double SelectionModel::predict(const Sequence &seq){
 	return Q(seq);
@@ -717,16 +493,9 @@ double* SelectionModel::predictMany(const SequenceVector &seq){
 	return prediction;
 }
 
-
-
-
-
-
-
-
 double SelectionModel::Q(const Sequence &seq){
-	int v=seq.Vindex;
-	int j=seq.Jindex;
+	int v=seq.Vindex[0];
+	int j=seq.Jindex[0];
 	int Lindex=seq.aminoacide.length()-minL;
 	double q=q_VJ[v*J_indexes->size()+j]*q_L[seq.aminoacide.length()-minL];
 	
@@ -768,15 +537,17 @@ map<string,int>* SelectionModel::extractVSet(const SequenceVector &data_seq,cons
 	int N=data_seq.size();
 	int k=0;
 	for(int i=0;i<N;i++){
-		if(out->find(data_seq[i].V) == out->end() ){
-			(*out)[data_seq[i].V]=k;
-			k++;
+		for(int v_counter=0;v_counter<data_seq[i].V.size();v_counter++){
+			if(out->find(data_seq[i].V[v_counter]) == out->end() ){
+				(*out)[data_seq[i].V[v_counter]]=k;
+				k++;
+			}
 		}
 	}
 	N=gen_seq.size();
 	for(int i=0;i<N;i++){
-		if(out->find(gen_seq[i].V) == out->end() ){
-			(*out)[gen_seq[i].V]=k;
+		if(out->find(gen_seq[i].V[0]) == out->end() ){
+			(*out)[gen_seq[i].V[0]]=k;
 			k++;
 		}
 	}
@@ -788,15 +559,17 @@ map<string,int>* SelectionModel::extractJSet(const SequenceVector &data_seq,cons
 	int N=data_seq.size();
 	int k=0;
 	for(int i=0;i<N;i++){
-		if(out->find(data_seq[i].J) == out->end() ){
-			(*out)[data_seq[i].J]=k;
-			k++;
+		for(int j_counter=0;j_counter<data_seq[i].J.size();j_counter++){
+			if(out->find(data_seq[i].J[j_counter]) == out->end() ){
+				(*out)[data_seq[i].J[j_counter]]=k;
+				k++;
+			}
 		}
 	}
 	N=gen_seq.size();
 	for(int i=0;i<N;i++){
-		if(out->find(gen_seq[i].J) == out->end() ){
-			(*out)[gen_seq[i].J]=k;
+		if(out->find(gen_seq[i].J[0]) == out->end() ){
+			(*out)[gen_seq[i].J[0]]=k;
 			k++;
 		}
 	}
@@ -827,8 +600,8 @@ void SelectionModel::evalf_gen_VJdistribution(const SequenceVector &gen_seq,doub
 	double sum=0;
 	for(int i=0;i<gen_seq.size();i++){
 		if(gen_seq[i].valid){
-			int vindex=gen_seq[i].Vindex;
-			int jindex=gen_seq[i].Jindex;
+			int vindex=gen_seq[i].Vindex[0];
+			int jindex=gen_seq[i].Jindex[0];
 			double q=Q(gen_seq[i]);
 			VJ_distribution[vindex*J_indexes->size()+jindex]+=q;
 			sum+=q;
@@ -864,8 +637,8 @@ double SelectionModel::evalf_Z(const SequenceVector &gen_seq){
 		if(gen_seq[i].valid){
 			if(gen_seq[i].aminoacide.length()<minL||gen_seq[i].aminoacide.length()>maxL)
 				continue;
-			int v=gen_seq[i].Vindex;
-			int j=gen_seq[i].Jindex;
+			int v=gen_seq[i].Vindex[0];
+			int j=gen_seq[i].Jindex[0];
 			int Lindex=gen_seq[i].aminoacide.length()-minL;
 			double q=q_VJ[v*J_indexes->size()+j]*q_L[gen_seq[i].aminoacide.length()-minL];
 	
