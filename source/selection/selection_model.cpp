@@ -112,7 +112,7 @@ void SelectionModel::evalfP_gen(SequenceVector &gen_seq){
 	}
 }
 
-void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int max_iter){
+void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int max_iter,bool useConjugate){
 	srand(time(NULL));
 	findMinMaxLength(data_seq, gen_seq);
 	
@@ -223,6 +223,9 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 
 	//initialize gen distribution
 	double* F=new double[fullSize];
+	double* oldF = new double[fullSize];
+	double* newS = new double[fullSize];
+	memset(newS, 0, fullSize * sizeof(double));
 	double* emptyArray=new double[fullSize];
 
 	
@@ -241,8 +244,8 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 
 	evalfP_gen(gen_seq);
 	ofstream file;
-	file.open("C://immunology//github//mimir//build//Debug//log_likehood_4");
-
+	file.open("C://immunology//github//mimir//build//Debug//log_likehood");
+	bool first = true;
 	while(counter<max_iter){
 		counter++;
 		double newVal;
@@ -291,35 +294,77 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 			
 			if(F[i]!=0){
 				if(i<Lsize){
-					F[i]=(data_Ldistribution[i]-F[i])/q_L[i];
+					if (q_L[i] != 0)
+						F[i] = (data_Ldistribution[i] - F[i]) / q_L[i];
+					else
+						F[i] = 0;
 					continue;
 				}
 				if(i<Lsize+VJsize){
-					F[i]=(data_VJpairDistribution[i-Lsize]-F[i])/q_VJ[i-Lsize];
+					if (q_VJ[i - Lsize] != 0)
+						F[i] = (data_VJpairDistribution[i - Lsize] - F[i]) / q_VJ[i - Lsize];
+					else
+						F[i] = 0;
 					continue;
 				}
-				F[i]=(data_AAdistibution[i-Lsize-VJsize]-F[i])/q_ilA[i-Lsize-VJsize];
+				if (q_ilA[i - Lsize - VJsize] != 0)
+					F[i] = (data_AAdistibution[i - Lsize - VJsize] - F[i]) / q_ilA[i - Lsize - VJsize];
+				else
+					F[i] = 0;
 			}
 			else{
 			}
 		}
- 		gradient_step=optimizeStep(gen_seq,data_seq,F,emptyArray,Lsize,VJsize,AAsize,&delt);
 		
-		printf("step:::%f",gradient_step);
+		double W = 0, oldFSq = 0;
+		if (useConjugate) {
+			if (!first) {
+
+				for (int i = 0;i < fullSize;i++) {
+					oldFSq += oldF[i] * oldF[i];
+					W += F[i] * (F[i] - oldF[i]);
+					oldF[i] = F[i];
+				}
+				if (oldFSq == 0)
+					W = 0;
+				else
+					W = W / oldFSq;
+				if (W < 0) W = 0;
+			}
+		}
+		for (int i = 0;i < fullSize;i++) {
+			newS[i] = F[i] + W*newS[i];
+		}
+		double oldDelt = delt;
+ 		gradient_step=optimizeStep(gen_seq,data_seq,newS,emptyArray,Lsize,VJsize,AAsize,&delt);
+		if (!first&&(gradient_step<0.0001||delt<oldDelt))
+		{
+			W = 0;
+			for (int i = 0;i < fullSize;i++)
+				newS[i] = F[i];
+			gradient_step = optimizeStep(gen_seq, data_seq, newS, emptyArray, Lsize, VJsize, AAsize, &delt);
+			if (gradient_step < 0.0001 || delt < oldDelt) {
+				printf("\n YO YO YO optimiztion done!!! last step is %f, log likehood is %f", gradient_step, delt);
+				break;
+			}
+		}
+		first = false;
+
+		printf("step:::%f,  w:::%f",gradient_step,W);
 		for(int i=0;i<fullSize;i++){
-			if(F[i]!=0){
+			if(newS[i]!=0){
 				if(i<Lsize){
-					q_L[i]+=gradient_step*F[i];
+					q_L[i]+=gradient_step*newS[i];
 					if(q_L[i]<0) q_L[i]=0;
 					continue;
 				}
 				if(i<Lsize+VJsize){
-					q_VJ[i-Lsize]+=gradient_step*F[i];
+					q_VJ[i-Lsize]+=gradient_step*newS[i];
 					if(q_VJ[i-Lsize]<0) q_VJ[i-Lsize]=0;
 
 					continue;
 				}
-				q_ilA[i-Lsize-VJsize]+=gradient_step*F[i];
+				q_ilA[i-Lsize-VJsize]+=gradient_step*newS[i];
 				if(q_ilA[i-Lsize-VJsize]<0) q_ilA[i-Lsize-VJsize]=0;
 			}
 		}
@@ -419,6 +464,8 @@ double SelectionModel::evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &
 
 				}
 				q*=(q_VJ[v_in*J_indexes->size() + j_in]+alpha*F[Lsize+v_in*J_indexes->size() + j_in]) * (q_L[gen_seq[i].aminoacide.length() - minL]+alpha*F[gen_seq[i].aminoacide.length() - minL]);
+				if (q < 0)
+					q = 0;
 				Qsum+=q;
 	}
 	double Z=Qsum/gen_seq.size();
@@ -442,10 +489,17 @@ double SelectionModel::evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &
 
 						for (int k = 0; k < L; k++){
 							int aa_index = data_seq[i].aminoacide_indexes[k];
-							q *= q_ilA[aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k]+alpha*F[Lsize+VJsize+aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
+							double h = q_ilA[aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k] + alpha*F[Lsize + VJsize + aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
+							if (h < 0)
+								h = 0;
+							q *= h;
 						}
 						q*=(q_VJ[v_in*J_indexes->size() + j_in]+alpha*F[Lsize+v_in*J_indexes->size() + j_in]) * (q_L[data_seq[i].aminoacide.length() - minL]+alpha*F[data_seq[i].aminoacide.length() - minL]);
-						likehood+=w*(log(q)-log(Z));
+						
+						if (q <= 0 || Z<=0)
+							likehood = -99999999999;
+						else
+							likehood += w*(log(q) - log(Z));
 				}
 			}
 		}
@@ -458,7 +512,36 @@ double SelectionModel::optimizeStep(SequenceVector &gen_seq,SequenceVector &data
 	double phi=0.5*(1+sqrt(5));
 	double a=0;
 	double b=10;
-	while(abs(b-a)>0.01){
+	int fullSize = Lsize + VJsize + AAsize;
+	
+	for (int i = 0;i<fullSize;i++) {
+		if (F[i] != 0) {
+			if (i<Lsize) {
+				if (F[i]<0)
+				{
+					double newUpLimit = q_L[i] / (-F[i]);
+					if (newUpLimit < b) b = newUpLimit;
+				}
+				continue;
+			}
+			if (i<Lsize + VJsize) {
+				if (F[i]<0)
+				{
+					double newUpLimit = q_VJ[i - Lsize] / (-F[i]);
+					if (newUpLimit < b) b = newUpLimit;
+				}
+				continue;
+			}
+			if (F[i]<0)
+			{
+				double newUpLimit = q_ilA[i - Lsize - VJsize] / (-F[i]);
+				if (newUpLimit < b) b = newUpLimit;
+			}
+		}
+	}
+	double eps = (b - a) / 1000;
+	printf("\n ->>b=%f \n",b);
+	while(abs(b-a)>eps){
 		double x1=b-(b-a)/phi;
 		double x2=a+(b-a)/phi;
 		double y1=evalfMaxLikehood(gen_seq,data_seq,x1,F,Lsize,VJsize,AAsize);

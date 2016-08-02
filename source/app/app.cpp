@@ -387,7 +387,7 @@ int main(int argc, char* argv[])
 	
 	SelectionModel* S=new SelectionModel();
 	cout<<"start fiting\n";
-	S->fit(data,gen,100);
+	S->fit(data,gen,20,false);
 	cout<<"fit done";
 	
 	//for(int i=0;i<8;i++)

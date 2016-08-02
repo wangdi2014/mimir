@@ -97,7 +97,7 @@ namespace mimir {
         /**
          *
          */
-		void fit(SequenceVector &data_seq,  SequenceVector &gen_seq,int max_iter);
+		void fit(SequenceVector &data_seq,  SequenceVector &gen_seq,int max_iter,bool useConjugate);
 		void evalfP_gen(SequenceVector &gen_seq);
 		double evalfMaxDelta(SequenceVector &gen_seq,double alpha,double* F,double* emptyArray,int Lsize,int VJsize,int AAsize);
 		double evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &data_seq,double alpha,double* F,int Lsize,int VJsize,int AAsize);
