@@ -99,9 +99,9 @@ namespace mimir {
          */
 		void fit(SequenceVector &data_seq,  SequenceVector &gen_seq,int max_iter,bool useConjugate);
 		void evalfP_gen(SequenceVector &gen_seq);
-		double evalfMaxDelta(SequenceVector &gen_seq,double alpha,double* F,double* emptyArray,int Lsize,int VJsize,int AAsize);
-		double evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &data_seq,double alpha,double* F,int Lsize,int VJsize,int AAsize);
-		double optimizeStep(SequenceVector &gen_seq,SequenceVector &data_seq,double* F,double* emptyArray,int Lsize,int VJsize,int AAsize,double* maxDelt);
+		double evalfMaxDelta(SequenceVector &gen_seq,double alpha, vector<double>& F, vector<double>& emptyArray,int Lsize,int VJsize,int AAsize);
+		double evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &data_seq,double alpha, vector<double>& F,int Lsize,int VJsize,int AAsize);
+		double optimizeStep(SequenceVector &gen_seq,SequenceVector &data_seq, vector<double>& F, vector<double>& emptyArray,int Lsize,int VJsize,int AAsize,double* maxDelt);
 
         /**
          *
@@ -112,17 +112,14 @@ namespace mimir {
 		double* Gw ;
 		double* Dw ;
 
-		double* get_q_L(){return q_L;};
-		double* get_q_VJ(){return q_VJ;};
-		double* get_ilA(){return q_ilA;};
+		vector<double>& get_q_L(){return q_L;};
+		vector<double>& get_q_VJ(){return q_VJ;};
+		vector<double>& get_ilA(){return q_ilA;};
 
-		double* get_cluster_L(int i) { return cluster_L+i*(maxL - minL + 1); };
-		double* get_cluster_VJ(int i) { return cluster_VJ+i*(V_indexes->size()*J_indexes->size()); };
-		double* get_cluster_ilA(int i) { return cluster_ilA+i*((maxL - minL + 1)*maxL*aminoAcidIndexes.size()); };
 
-		double* get_Pgen_L(){return gen_L;};
-		double* get_Pgen_VJ(){	return gen_VJ;};
-		double* get_Pgen_ilA(){return gen_ilA;};
+		vector<double>& get_Pgen_L(){return gen_L;};
+		vector<double>& get_Pgen_VJ(){	return gen_VJ;};
+		vector<double>& get_Pgen_ilA(){return gen_ilA;};
 		double getZ(){return Z;};
 		int getMinL(){return minL;};
 		int getMaxL(){return maxL;};
@@ -139,23 +136,20 @@ namespace mimir {
 		map<string,int>* V_indexes, * J_indexes;
 		map<char,int> aminoAcidIndexes;
 
-		double* data_Ldistribution;
-		double* data_VJpairDistribution;
-		double* data_AAdistibution;
+		vector<double> data_Ldistribution;
+		vector<double> data_VJpairDistribution;
+		vector<double> data_AAdistibution;
 
-		double* q_L;
-		double* q_VJ;
-		double* q_ilA;
+		vector<double> q_L;
+		vector<double> q_VJ;
+		vector<double> q_ilA;
 
-		double* cluster_L;
-		double* cluster_VJ;
-		double* cluster_ilA;
 		
 		
 
-		double* gen_L;
-		double* gen_VJ;
-		double* gen_ilA;
+		vector<double> gen_L;
+		vector<double> gen_VJ;
+		vector<double> gen_ilA;
 
 
 
@@ -169,13 +163,13 @@ namespace mimir {
 			return data_Ldistribution[L];
 		}
 		void findMinMaxLength(const SequenceVector &data_seq, const SequenceVector &gen_seq);
-		double* evalfDataLDistribution(const SequenceVector &data_seq, int minL, int maxL, int minFrequency);
+		void evalfDataLDistribution(const SequenceVector &data_seq, int minL, int maxL, int minFrequency, vector<double>& l_distribution);
 		map<string,int>* extractVSet(const SequenceVector &data_seq, const SequenceVector &gen_seq);
 		map<string,int>* extractJSet(const SequenceVector &data_seq, const SequenceVector &gen_seq);
 
-		void evalf_gen_Ldistribution(const SequenceVector &gen_seq, double* l_distribution);
-		void evalf_gen_VJdistribution(const SequenceVector &gen_seq,double* VJ_distribution);
-		void evalf_gen_AAdistribution(const SequenceVector &gen_seq,double* AA_distribution);
+		void evalf_gen_Ldistribution(const SequenceVector &gen_seq, vector<double>& l_distribution);
+		void evalf_gen_VJdistribution(const SequenceVector &gen_seq, vector<double>& VJ_distribution);
+		void evalf_gen_AAdistribution(const SequenceVector &gen_seq, vector<double>& AA_distribution);
 		double evalf_Z(const SequenceVector &gen_seq);
 
 		void transformData(SequenceVector *seq);

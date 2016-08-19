@@ -34,19 +34,13 @@ map<char,int> init_aa_map(){
 	
 }
 
-SelectionModel::SelectionModel(void)
+SelectionModel::SelectionModel(void):
+data_Ldistribution(vector<double>(0)),q_L(vector<double>(0)),gen_L(vector<double>(0)),
+data_VJpairDistribution(vector<double>(0)),q_VJ(vector<double>(0)),gen_VJ(vector<double>(0)),
+data_AAdistibution(vector<double>(0)),q_ilA(vector<double>(0)),gen_ilA(vector<double>(0))
 {
 	V_indexes=NULL;
 	J_indexes=NULL;
-
-	data_Ldistribution=NULL;
-	q_L=NULL;
-
-	data_VJpairDistribution=NULL;
-	q_VJ=NULL;
-
-	data_AAdistibution=NULL;
-	q_ilA=NULL;
 
 	minL=99999;
 	maxL=0;
@@ -58,14 +52,7 @@ SelectionModel::~SelectionModel(void)
 {
 	delete V_indexes;
 	delete J_indexes;
-	delete[] data_Ldistribution;
-	delete[] q_L;
 	
-	delete[] data_VJpairDistribution;
-	delete[] q_VJ;
-
-	delete[] data_AAdistibution;
-	delete[] q_ilA;
 }
 
 void SelectionModel::evalfP_gen(SequenceVector &gen_seq){
@@ -74,12 +61,9 @@ void SelectionModel::evalfP_gen(SequenceVector &gen_seq){
 	const int AAsize = (maxL - minL + 1)*maxL*aminoAcidIndexes.size();
 	const int fullSize=Lsize+VJsize+AAsize;
 
-	gen_L=new double[maxL-minL+1];
-	memset(gen_L,0,sizeof(double)*(maxL-minL+1));
-	gen_VJ=new double[V_indexes->size()*J_indexes->size()];
-	memset(gen_VJ,0,sizeof(double)*(V_indexes->size()*J_indexes->size()));
-	gen_ilA=new double[(maxL-minL+1)*maxL*aminoAcidIndexes.size()];
-	memset(gen_ilA,0,sizeof(double)*((maxL-minL+1)*maxL*aminoAcidIndexes.size()));
+	gen_L = vector<double>(maxL - minL + 1, 0);
+	gen_VJ = vector<double>(V_indexes->size()*J_indexes->size());
+	gen_ilA = vector<double>((maxL - minL + 1)*maxL*aminoAcidIndexes.size());
 
 	float Qsum=0;
 	for (int i = 0; i < gen_seq.size(); i++){
@@ -116,7 +100,8 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 	srand(time(NULL));
 	findMinMaxLength(data_seq, gen_seq);
 	
-	data_Ldistribution = evalfDataLDistribution(data_seq, minL, maxL, 1000);
+	vector<double> data_Ldistribution(maxL - minL + 1);
+	evalfDataLDistribution(data_seq, minL, maxL, 1000, data_Ldistribution);
 	int newMinL,newMaxL;
 	for(int l=minL;l<=maxL;l++){
 		if(data_Ldistribution[l-minL]>1000){
@@ -133,9 +118,9 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 	printf("minL %d,maxL %d",newMinL,newMaxL);
 	minL=newMinL;
 	maxL=newMaxL;
-	delete[] data_Ldistribution;
-	data_Ldistribution=new double[maxL-minL+1];
-	memset(data_Ldistribution,0,sizeof(double)*(maxL-minL+1));
+	data_Ldistribution=vector<double>(maxL - minL + 1);
+	std::fill(std::begin(data_Ldistribution), std::end(data_Ldistribution), 0);
+	
 	int N = 0;
 	long total_sum = 0;
 	for(int i=0;i<data_seq.size();i++){
@@ -156,8 +141,8 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 
 
 
-	data_VJpairDistribution = new double[V_indexes->size()*J_indexes->size()];
-	memset(data_VJpairDistribution, 0, sizeof(double)*V_indexes->size()*J_indexes->size());
+	vector<double> data_VJpairDistribution(V_indexes->size()*J_indexes->size());
+	std::fill(std::begin(data_VJpairDistribution),std::end(data_VJpairDistribution),0);
 
 
 	for (int i = 0; i < data_seq.size(); i++){
@@ -179,8 +164,9 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 
 
 	//initialize aaDistribution
-	data_AAdistibution = new double[(maxL - minL + 1)*maxL*aminoAcidIndexes.size()];
-	memset(data_AAdistibution, 0, sizeof(double)*(maxL - minL + 1)*maxL*aminoAcidIndexes.size());
+	vector<double> data_AAdistibution((maxL - minL + 1)*maxL*aminoAcidIndexes.size());
+	std::fill(std::begin(data_AAdistibution), std::begin(data_AAdistibution), 0);
+
 	for (int i = 0; i < data_seq.size(); i++){
 		int L = data_seq[i].aminoacide.length();
 		if(L>=minL&&L<=maxL){
@@ -209,24 +195,24 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 	const int fullSize=Lsize+VJsize+AAsize;
 
 	//initialize start parametr
-	q_L=new double[maxL-minL+1];
+	q_L=vector<double>(maxL-minL+1);
 	for(int i=0;i<(maxL-minL+1);i++) q_L[i]=((double) rand() / (RAND_MAX))+0.5;
-	//memset(q_L,0,sizeof(double)*(maxL-minL+1));
-	q_VJ=new double[V_indexes->size()*J_indexes->size()];
-	//memset(q_VJ,0,sizeof(double)*V_indexes->size()*J_indexes->size());
+
+	q_VJ= vector<double>(V_indexes->size()*J_indexes->size());
 	for(int i=0;i<(V_indexes->size()*J_indexes->size());i++) q_VJ[i]=((double) rand() / (RAND_MAX))+0.5;
-	q_ilA=new double[(maxL-minL+1)*maxL*aminoAcidIndexes.size()];
-	//memset(q_ilA,0,sizeof(double)*(maxL-minL+1)*(maxL-minL+1)*aminoAcidIndexes.size());
+
+	q_ilA= vector<double>((maxL-minL+1)*maxL*aminoAcidIndexes.size());
 	for(int i=0;i<((maxL-minL+1)*maxL*aminoAcidIndexes.size());i++) q_ilA[i]=((double) rand() / (RAND_MAX))+0.5;
+
 	Z=1.0;
 
 
 	//initialize gen distribution
-	double* F=new double[fullSize];
-	double* oldF = new double[fullSize];
-	double* newS = new double[fullSize];
-	memset(newS, 0, fullSize * sizeof(double));
-	double* emptyArray=new double[fullSize];
+	vector<double> F (fullSize);
+	vector<double> oldF(fullSize);
+	vector<double> newS(fullSize);
+	std:fill(std::begin(F),std::end(F),0);
+	vector<double> emptyArray(fullSize);
 
 	
 
@@ -251,7 +237,7 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 		double newVal;
 		delt=0;
 		double Qsum=0;
-		memset(F,0,fullSize*sizeof(double));
+		std::fill(std::begin(F),std::end(F),0);
 		for (int i = 0; i < gen_seq.size(); i++){
 
 			int v_in = gen_seq[i].Vindex[0];
@@ -393,10 +379,10 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 
 }
 
-double SelectionModel::evalfMaxDelta(SequenceVector &gen_seq,double alpha,double* F,double* emptyArray,int Lsize,int VJsize,int AAsize){
+double SelectionModel::evalfMaxDelta(SequenceVector &gen_seq,double alpha, vector<double>& F, vector<double>& emptyArray,int Lsize,int VJsize,int AAsize){
 	int fullSize=Lsize+VJsize+AAsize;
 	double Qsum=0;
-	memset(emptyArray,0,sizeof(double)*fullSize);
+	std::fill(std::begin(emptyArray), std::end(emptyArray), 0);
 	for(int i=0;i<gen_seq.size();i++){
 		int v_in = gen_seq[i].Vindex[0];
 			int j_in = gen_seq[i].Jindex[0];
@@ -445,7 +431,7 @@ double SelectionModel::evalfMaxDelta(SequenceVector &gen_seq,double alpha,double
 	return maxDelt;
 }
 
-double SelectionModel::evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &data_seq,double alpha,double* F,int Lsize,int VJsize,int AAsize){
+double SelectionModel::evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &data_seq,double alpha, vector<double>& F,int Lsize,int VJsize,int AAsize){
 	int fullSize=Lsize+VJsize+AAsize;
 	double Qsum=0;
 	for(int i=0;i<gen_seq.size();i++){
@@ -508,7 +494,7 @@ double SelectionModel::evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &
 
 }
 
-double SelectionModel::optimizeStep(SequenceVector &gen_seq,SequenceVector &data_seq,double* F,double* emptyArray,int Lsize,int VJsize,int AAsize,double* delt){
+double SelectionModel::optimizeStep(SequenceVector &gen_seq,SequenceVector &data_seq, vector<double>& F, vector<double>& emptyArray,int Lsize,int VJsize,int AAsize,double* delt){
 	double phi=0.5*(1+sqrt(5));
 	double a=0;
 	double b=10;
@@ -604,15 +590,12 @@ void SelectionModel::findMinMaxLength(const SequenceVector &data_seq,const Seque
 	}
 }
 
-double* SelectionModel::evalfDataLDistribution(const SequenceVector &data_seq,int minL,int maxL,int minFrequency){
-	double* LDistribution=new double[maxL-minL+1];
-	memset(LDistribution,0,sizeof(double)*(maxL-minL+1));
+void SelectionModel::evalfDataLDistribution(const SequenceVector &data_seq,int minL,int maxL,int minFrequency, vector<double>& l_distribution){
 	int N=data_seq.size();
 	for(int i=0;i<N;i++){
 		int L=data_seq[i].aminoacide.length();
-		LDistribution[L-minL]+=1;
+		l_distribution[L-minL]+=1;
 	}
-	return LDistribution;
 }
 
 map<string,int>* SelectionModel::extractVSet(const SequenceVector &data_seq,const SequenceVector &gen_seq){
@@ -659,7 +642,7 @@ map<string,int>* SelectionModel::extractJSet(const SequenceVector &data_seq,cons
 	return out;
 }
 
-void SelectionModel::evalf_gen_Ldistribution(const SequenceVector &gen_seq,double* l_distribution){
+void SelectionModel::evalf_gen_Ldistribution(const SequenceVector &gen_seq, vector<double>& l_distribution){
 	double* out=new double[maxL-minL+1];
 	memset(out,0,sizeof(double)*(maxL-minL+1));
 	double sum=0;
@@ -677,8 +660,8 @@ void SelectionModel::evalf_gen_Ldistribution(const SequenceVector &gen_seq,doubl
 	delete[] out;
 }
 
-void SelectionModel::evalf_gen_VJdistribution(const SequenceVector &gen_seq,double* VJ_distribution){
-	memset(VJ_distribution,0,sizeof(double)*V_indexes->size()*J_indexes->size());
+void SelectionModel::evalf_gen_VJdistribution(const SequenceVector &gen_seq, vector<double>& VJ_distribution){
+	std::fill(std::begin(VJ_distribution), std::end(VJ_distribution), 0);
 
 	double sum=0;
 	for(int i=0;i<gen_seq.size();i++){
@@ -695,8 +678,8 @@ void SelectionModel::evalf_gen_VJdistribution(const SequenceVector &gen_seq,doub
 	}
 }
 
-void SelectionModel::evalf_gen_AAdistribution(const SequenceVector &gen_seq,double* AA_distribution){
-	memset(AA_distribution,0,sizeof(double)*aminoAcidIndexes.size()*maxL*(maxL-minL+1));
+void SelectionModel::evalf_gen_AAdistribution(const SequenceVector &gen_seq, vector<double>& AA_distribution){
+	std::fill(std::begin(AA_distribution),std::end(AA_distribution),0);
 
 	double sum=0;
 	for(int i=0;i<gen_seq.size();i++){
