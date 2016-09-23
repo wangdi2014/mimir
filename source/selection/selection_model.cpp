@@ -570,7 +570,7 @@ double SelectionModel::Q(const Sequence &seq){
 	
 	for(int i=0;i<seq.aminoacide.length();i++){
 		int aa_index=seq.aminoacide_indexes[i];
-		q*=q_ilA[aa_index*(maxL-minL+1)*(maxL-minL+1)+Lindex*maxL+i];
+		q*=q_ilA[aa_index*(maxL-minL+1)*maxL+Lindex*maxL+i];
 	}
 	return q/Z;
 }
