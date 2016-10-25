@@ -6,6 +6,8 @@ using namespace mimir;
 
 const double SelectionModel::EPS=0.001;
 const int SelectionModel::MAX_STEP=300;
+const int SelectionModel::MinCountForLength = 1000;
+const int SelectionModel::ScalarOptimizeN=10;
 
 map<char,int> init_aa_map(){
 	map<char,int> aa_map;
@@ -35,9 +37,7 @@ map<char,int> init_aa_map(){
 }
 
 SelectionModel::SelectionModel(void):
-data_Ldistribution(vector<double>(0)),q_L(vector<double>(0)),gen_L(vector<double>(0)),
-data_VJpairDistribution(vector<double>(0)),q_VJ(vector<double>(0)),gen_VJ(vector<double>(0)),
-data_AAdistibution(vector<double>(0)),q_ilA(vector<double>(0)),gen_ilA(vector<double>(0))
+q_L(vector<double>(0)),gen_L(vector<double>(0)),q_VJ(),gen_VJ(),q_ilA(),gen_ilA()
 {
 	V_indexes=NULL;
 	J_indexes=NULL;
@@ -62,8 +62,8 @@ void SelectionModel::evalfP_gen(SequenceVector &gen_seq){
 	const int fullSize=Lsize+VJsize+AAsize;
 
 	gen_L = vector<double>(maxL - minL + 1, 0);
-	gen_VJ = vector<double>(V_indexes->size()*J_indexes->size());
-	gen_ilA = vector<double>((maxL - minL + 1)*maxL*aminoAcidIndexes.size());
+	gen_VJ = Martrix2d(V_indexes->size(),J_indexes->size());
+	gen_ilA = Martrix3d(aminoAcidIndexes.size(),(maxL - minL + 1),maxL);
 
 	float Qsum=0;
 	for (int i = 0; i < gen_seq.size(); i++){
@@ -78,22 +78,23 @@ void SelectionModel::evalfP_gen(SequenceVector &gen_seq){
 			
 			Qsum+=1;
 			gen_L[Lindex] += 1;
-			gen_VJ[VJindex] += 1;
+			gen_VJ.add(v_in,j_in,1);
 			for (int j = 0; j<L; j++){
-				int aa_index = gen_seq[i].aminoacide_indexes[j] * (maxL - minL + 1)*maxL + (L - minL)*maxL + j;
-				gen_ilA[aa_index] += 1;
+				gen_ilA.add(gen_seq[i].aminoacide_indexes[j], (L - minL),j,1);
 			}
 	}
 	printf("Qsum::::%f",Qsum);
+	for (int i = 0; i < maxL - minL + 1; i++)
+		for (int j = 0;j < maxL;j++)
+			for (int k = 0;k < aminoAcidIndexes.size();k++)
+				gen_ilA.set(k, i, j, gen_ilA.get(k, i, j) / gen_L[i]);
 	for(int i=0;i<Lsize;i++){
 		gen_L[i]=gen_L[i]/Qsum;
 	}
 	for(int i=0;i<VJsize;i++){
-		gen_VJ[i]=gen_VJ[i]/Qsum;
+		gen_VJ.data[i]=gen_VJ.data[i]/Qsum;
 	}
-	for(int i=0;i<AAsize;i++){
-		gen_ilA[i]=gen_ilA[i]/Qsum;
-	}
+
 }
 
 void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int max_iter,bool useConjugate){
@@ -104,13 +105,13 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 	evalfDataLDistribution(data_seq, minL, maxL, 1000, data_Ldistribution);
 	int newMinL,newMaxL;
 	for(int l=minL;l<=maxL;l++){
-		if(data_Ldistribution[l-minL]>1000){
+		if(data_Ldistribution[l-minL]>MinCountForLength){
 			newMinL=l;
 			break;
 		}
 	}
 	for(int l=maxL;l>=minL;l--){
-		if(data_Ldistribution[l-minL]>1000){
+		if(data_Ldistribution[l-minL]>MinCountForLength){
 			newMaxL=l;
 			break;
 		}
@@ -141,8 +142,7 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 
 
 
-	vector<double> data_VJpairDistribution(V_indexes->size()*J_indexes->size());
-	std::fill(std::begin(data_VJpairDistribution),std::end(data_VJpairDistribution),0);
+	Martrix2d data_VJpairDistribution(V_indexes->size(),J_indexes->size());
 
 
 	for (int i = 0; i < data_seq.size(); i++){
@@ -154,18 +154,16 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 				float w = data_seq[i].weights[v_counter*data_seq[i].J.size() + j_counter] * data_seq[i].W_count;
 				
 				if(data_seq[i].aminoacide.length()>=minL&&data_seq[i].aminoacide.length()<=maxL){
-					data_VJpairDistribution[v_in*J_indexes->size() + j_in] += w;
+					data_VJpairDistribution.add(v_in,j_in,w);
 				}
 			}
 		}
 	}
-	for (int i = 0; i < V_indexes->size()*J_indexes->size(); i++)
-		data_VJpairDistribution[i] /= (double)total_sum;
+	for (int i = 0; i < data_VJpairDistribution.data.size(); i++)
+		data_VJpairDistribution.data[i] /= (double)total_sum;
 
 
-	//initialize aaDistribution
-	vector<double> data_AAdistibution((maxL - minL + 1)*maxL*aminoAcidIndexes.size());
-	std::fill(std::begin(data_AAdistibution), std::begin(data_AAdistibution), 0);
+	Martrix3d data_AAdistibution(aminoAcidIndexes.size(),maxL - minL + 1,maxL);
 
 	for (int i = 0; i < data_seq.size(); i++){
 		int L = data_seq[i].aminoacide.length();
@@ -174,15 +172,15 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 				char sym = data_seq[i].aminoacide[j];
 				if (sym != '*'&&sym != '~'){
 					int aa_index = aminoAcidIndexes.at(sym);
-					data_AAdistibution[aa_index*(maxL - minL + 1)*maxL + (L - minL)*maxL + j] += data_seq[i].W_count;
+					data_AAdistibution.add(aa_index, L - minL, j, data_seq[i].W_count);
 				}
 			}
 		}
 	}
-	for (int i = 0; i < maxL - minL + 1; i++) 
-		for(int j=0;j<maxL;j++)
-			for(int k=0;k<aminoAcidIndexes.size();k++)
-				data_AAdistibution[k*(maxL - minL + 1)*maxL+i*maxL+j] /= data_Ldistribution[i];
+	for (int i = 0; i < maxL - minL + 1; i++)
+		for (int j = 0;j < maxL;j++)
+			for (int k = 0;k < aminoAcidIndexes.size();k++)
+				data_AAdistibution.set(k, i, j, data_AAdistibution.get(k, i, j) / data_Ldistribution[i]);
 	
 
 	for (int i = 0;i<newMaxL - newMinL + 1;i++) {
@@ -196,18 +194,17 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 
 	//initialize start parametr
 	q_L=vector<double>(maxL-minL+1);
-	for(int i=0;i<(maxL-minL+1);i++) q_L[i]=((double) rand() / (RAND_MAX))+0.5;
+	for(int i=0;i<(maxL-minL+1);i++) q_L[i]=0.2*((double) rand() / (RAND_MAX))+1.9;
 
-	q_VJ= vector<double>(V_indexes->size()*J_indexes->size());
-	for(int i=0;i<(V_indexes->size()*J_indexes->size());i++) q_VJ[i]=((double) rand() / (RAND_MAX))+0.5;
+	q_VJ = Martrix2d(V_indexes->size(),J_indexes->size());
+	for(int i=0;i<q_VJ.data.size();i++) q_VJ.data[i]= 0.2*((double)rand() / (RAND_MAX)) + 1.9;
 
-	q_ilA= vector<double>((maxL-minL+1)*maxL*aminoAcidIndexes.size());
-	for(int i=0;i<((maxL-minL+1)*maxL*aminoAcidIndexes.size());i++) q_ilA[i]=((double) rand() / (RAND_MAX))+0.5;
+	q_ilA= Martrix3d(aminoAcidIndexes.size(),(maxL-minL+1),maxL);
+	for(int i=0;i<q_ilA.data.size();i++) q_ilA.data[i]= 0.2*((double)rand() / (RAND_MAX)) + 1.9;
 
 	Z=1.0;
 
 
-	//initialize gen distribution
 	vector<double> F (fullSize);
 	vector<double> oldF(fullSize);
 	vector<double> newS(fullSize);
@@ -232,10 +229,10 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 	ofstream file;
 	file.open("C://immunology//github//mimir//build//Debug//log_likehood");
 	bool first = true;
+	delt = 0;
 	while(counter<max_iter){
 		counter++;
 		double newVal;
-		delt=0;
 		double Qsum=0;
 		std::fill(std::begin(F),std::end(F),0);
 		for (int i = 0; i < gen_seq.size(); i++){
@@ -251,10 +248,10 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 
 			for (int k = 0; k < L; k++){
 				int aa_index = gen_seq[i].aminoacide_indexes[k];
-				q *= q_ilA[aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
+				q *= q_ilA.get(aa_index,Lindex,k);
 
 			}
-			q*=q_VJ[v_in*J_indexes->size() + j_in] * q_L[gen_seq[i].aminoacide.length() - minL];
+			q*=q_VJ.get(v_in, j_in) * q_L[gen_seq[i].aminoacide.length() - minL];
 			Qsum+=q;
 			F[Lindex] += q;
 			F[VJindex] += q;
@@ -287,14 +284,14 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 					continue;
 				}
 				if(i<Lsize+VJsize){
-					if (q_VJ[i - Lsize] != 0)
-						F[i] = (data_VJpairDistribution[i - Lsize] - F[i]) / q_VJ[i - Lsize];
+					if (q_VJ.data[i - Lsize] != 0)
+						F[i] = (data_VJpairDistribution.data[i - Lsize] - F[i]) / q_VJ.data[i - Lsize];
 					else
 						F[i] = 0;
 					continue;
 				}
-				if (q_ilA[i - Lsize - VJsize] != 0)
-					F[i] = (data_AAdistibution[i - Lsize - VJsize] - F[i]) / q_ilA[i - Lsize - VJsize];
+				if (q_ilA.data[i - Lsize - VJsize] != 0)
+					F[i] = (data_AAdistibution.data[i - Lsize - VJsize] - F[i]) / q_ilA.data[i - Lsize - VJsize];
 				else
 					F[i] = 0;
 			}
@@ -309,7 +306,7 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 				for (int i = 0;i < fullSize;i++) {
 					oldFSq += oldF[i] * oldF[i];
 					W += F[i] * (F[i] - oldF[i]);
-					oldF[i] = F[i];
+					
 				}
 				if (oldFSq == 0)
 					W = 0;
@@ -320,6 +317,7 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 		}
 		for (int i = 0;i < fullSize;i++) {
 			newS[i] = F[i] + W*newS[i];
+			oldF[i] = F[i];
 		}
 		double oldDelt = delt;
  		gradient_step=optimizeStep(gen_seq,data_seq,newS,emptyArray,Lsize,VJsize,AAsize,&delt);
@@ -336,7 +334,10 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 		}
 		first = false;
 
-		printf("step:::%f,  w:::%f",gradient_step,W);
+		printf("step:::%f,  w:::%f\n",gradient_step,W);
+		float maxDelt = evalfMaxDelta(gen_seq, Lsize, VJsize, AAsize,data_Ldistribution,data_VJpairDistribution,data_AAdistibution);
+		float meanDelt = evalfMeanDelta(gen_seq, Lsize, VJsize, AAsize, data_Ldistribution, data_VJpairDistribution, data_AAdistibution);
+		printf("max delt:::%f,   mean delta:::%f\n",maxDelt,meanDelt);
 		for(int i=0;i<fullSize;i++){
 			if(newS[i]!=0){
 				if(i<Lsize){
@@ -345,18 +346,18 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 					continue;
 				}
 				if(i<Lsize+VJsize){
-					q_VJ[i-Lsize]+=gradient_step*newS[i];
-					if(q_VJ[i-Lsize]<0) q_VJ[i-Lsize]=0;
+					q_VJ.data[i-Lsize]+=gradient_step*newS[i];
+					if(q_VJ.data[i-Lsize]<0) q_VJ.data[i-Lsize]=0;
 
 					continue;
 				}
-				q_ilA[i-Lsize-VJsize]+=gradient_step*newS[i];
-				if(q_ilA[i-Lsize-VJsize]<0) q_ilA[i-Lsize-VJsize]=0;
+				q_ilA.data[i-Lsize-VJsize]+=gradient_step*newS[i];
+				if(q_ilA.data[i-Lsize-VJsize]<0) q_ilA.data[i-Lsize-VJsize]=0;
 			}
 		}
 		Z=evalf_Z(gen_seq);
 		file<<to_string(delt)+"\n";
-		printf("delt %f \n",delt);
+		printf("log likehood %f \n",delt);
 	}
 
 	int i;
@@ -365,12 +366,12 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 			q_L[i]=0;
 	}
 	for(i=0;i<VJsize;i++){
-		if(gen_VJ[i]==0)
-			q_VJ[i]=0;
+		if(gen_VJ.data[i]==0)
+			q_VJ.data[i]=0;
 	}
 	for(i=0;i<AAsize;i++){
-		if(gen_ilA[i]==0)
-			q_ilA[i]=0;
+		if(gen_ilA.data[i]==0)
+			q_ilA.data[i]=0;
 	}
 	file.close();
 	printf("delt %f \n",delt);
@@ -379,9 +380,10 @@ void SelectionModel::fit(SequenceVector &data_seq, SequenceVector &gen_seq,int m
 
 }
 
-double SelectionModel::evalfMaxDelta(SequenceVector &gen_seq,double alpha, vector<double>& F, vector<double>& emptyArray,int Lsize,int VJsize,int AAsize){
+double SelectionModel::evalfMaxDelta(SequenceVector &gen_seq,int Lsize,int VJsize,int AAsize,vector<double>& data_Ldistibution, Martrix2d& data_VJdistibution, Martrix3d& data_AAdistibution){
 	int fullSize=Lsize+VJsize+AAsize;
 	double Qsum=0;
+	vector<float> emptyArray(Lsize+VJsize+AAsize);
 	std::fill(std::begin(emptyArray), std::end(emptyArray), 0);
 	for(int i=0;i<gen_seq.size();i++){
 		int v_in = gen_seq[i].Vindex[0];
@@ -395,10 +397,10 @@ double SelectionModel::evalfMaxDelta(SequenceVector &gen_seq,double alpha, vecto
 
 			for (int k = 0; k < L; k++){
 				int aa_index = gen_seq[i].aminoacide_indexes[k];
-				q *= q_ilA[aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k]+alpha*F[Lsize+VJsize+aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
+				q *= q_ilA.get(aa_index,Lindex,k);
 
 			}
-			q*=(q_VJ[v_in*J_indexes->size() + j_in]+alpha*F[Lsize+v_in*J_indexes->size() + j_in]) * (q_L[gen_seq[i].aminoacide.length() - minL]+alpha*F[gen_seq[i].aminoacide.length() - minL]);
+			q*=q_VJ.get(v_in,j_in) * (q_L[gen_seq[i].aminoacide.length() - minL]);
 			Qsum+=q;
 			emptyArray[Lindex] += q;
 			emptyArray[VJindex] += q;
@@ -409,26 +411,95 @@ double SelectionModel::evalfMaxDelta(SequenceVector &gen_seq,double alpha, vecto
 	}
 	double maxDelt=0;
 	int i=0;
+
+	for (int i = 0; i < maxL - minL + 1; i++)
+		for (int j = 0;j<maxL;j++)
+			for (int k = 0;k < aminoAcidIndexes.size();k++)
+			{
+				int index = k*(maxL - minL + 1)*maxL + i*maxL + j;
+				if (emptyArray[index + Lsize + VJsize] != 0) {
+					double d = abs(emptyArray[index + Lsize + VJsize] / emptyArray[i] - data_AAdistibution.data[index]);
+					if (d > maxDelt) maxDelt = d;
+				}
+			}
+
 	for(i=0;i<Lsize;i++){
 		if(emptyArray[i]!=0){
-			double d=abs(emptyArray[i]/Qsum-data_Ldistribution[i])/q_L[i];
+			double d=abs(emptyArray[i]/Qsum- data_Ldistibution[i]);
 			if(d>maxDelt) maxDelt=d;
 		}
 	}
 	for(;i<VJsize+Lsize;i++){
 		if(emptyArray[i]!=0){
-			double d=abs(emptyArray[i]/Qsum-data_VJpairDistribution[i-Lsize])/q_VJ[i-Lsize];
-		if(d>maxDelt) maxDelt=d;
-		}
-	}
-	for(;i<fullSize;i++){
-		if(emptyArray[i]!=0){
-			double d=abs(emptyArray[i]/Qsum-data_AAdistibution[i-Lsize-VJsize])/q_ilA[i-Lsize-VJsize];
+			double d=abs(emptyArray[i]/Qsum- data_VJdistibution.data[i-Lsize]);
 		if(d>maxDelt) maxDelt=d;
 		}
 	}
 
 	return maxDelt;
+}
+
+double SelectionModel::evalfMeanDelta(SequenceVector &gen_seq, int Lsize, int VJsize, int AAsize , vector<double>& data_Ldistibution, Martrix2d& data_VJdistibution, Martrix3d& data_AAdistibution) {
+	int fullSize = Lsize + VJsize + AAsize;
+	double Qsum = 0;
+	vector<float> emptyArray(Lsize + VJsize + AAsize);
+	std::fill(std::begin(emptyArray), std::end(emptyArray), 0);
+	for (int i = 0;i<gen_seq.size();i++) {
+		int v_in = gen_seq[i].Vindex[0];
+		int j_in = gen_seq[i].Jindex[0];
+		if (gen_seq[i].aminoacide.length()<minL || gen_seq[i].aminoacide.length()>maxL)
+			continue;
+		int Lindex = gen_seq[i].aminoacide.length() - minL;
+		int VJindex = Lsize + v_in*J_indexes->size() + j_in;
+		int L = gen_seq[i].aminoacide.length();
+		double q = 1;
+
+		for (int k = 0; k < L; k++) {
+			int aa_index = gen_seq[i].aminoacide_indexes[k];
+			q *= q_ilA.get(aa_index,Lindex, k);
+
+		}
+		q *= q_VJ.get(v_in,j_in) * (q_L[gen_seq[i].aminoacide.length() - minL]);
+		Qsum += q;
+		emptyArray[Lindex] += q;
+		emptyArray[VJindex] += q;
+		for (int j = 0; j<L; j++) {
+			int aa_index = Lsize + VJsize + gen_seq[i].aminoacide_indexes[j] * (maxL - minL + 1)*maxL + (L - minL)*maxL + j;
+			emptyArray[aa_index] += q;
+		}
+	}
+	double meanDelt = 0;
+	int N = 0;
+
+	for (int i = 0; i < maxL - minL + 1; i++)
+		for (int j = 0;j<maxL;j++)
+			for (int k = 0;k < aminoAcidIndexes.size();k++)
+			{
+				int index = k*(maxL - minL + 1)*maxL + i*maxL + j;
+				if (emptyArray[index] != 0) {
+					double d = abs(emptyArray[index + Lsize + VJsize] / emptyArray[i] - data_AAdistibution.data[index]);
+					meanDelt += d;
+					N++;
+				}
+			}
+
+	int i = 0;
+	for (i = 0;i<Lsize;i++) {
+		if (emptyArray[i] != 0) {
+			double d = abs(emptyArray[i] / Qsum - data_Ldistibution[i]);
+			meanDelt += d;
+			N++;
+		}
+	}
+	for (;i<VJsize + Lsize;i++) {
+		if (emptyArray[i] != 0) {
+			double d = abs(emptyArray[i] / Qsum - data_VJdistibution.data[i - Lsize]);
+			meanDelt += d;
+			N++;
+		}
+	}
+
+	return meanDelt/N;
 }
 
 double SelectionModel::evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &data_seq,double alpha, vector<double>& F,int Lsize,int VJsize,int AAsize){
@@ -446,10 +517,10 @@ double SelectionModel::evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &
 
 				for (int k = 0; k < L; k++){
 					int aa_index = gen_seq[i].aminoacide_indexes[k];
-					q *= q_ilA[aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k]+alpha*F[Lsize+VJsize+aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
+					q *= q_ilA.get(aa_index,Lindex,k)+alpha*F[Lsize+VJsize+aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
 
 				}
-				q*=(q_VJ[v_in*J_indexes->size() + j_in]+alpha*F[Lsize+v_in*J_indexes->size() + j_in]) * (q_L[gen_seq[i].aminoacide.length() - minL]+alpha*F[gen_seq[i].aminoacide.length() - minL]);
+				q*=(q_VJ.get(v_in,j_in)+alpha*F[Lsize+v_in*J_indexes->size() + j_in]) * (q_L[gen_seq[i].aminoacide.length() - minL]+alpha*F[gen_seq[i].aminoacide.length() - minL]);
 				if (q < 0)
 					q = 0;
 				Qsum+=q;
@@ -469,18 +540,17 @@ double SelectionModel::evalfMaxLikehood(SequenceVector &gen_seq,SequenceVector &
 						int j_in = data_seq[i].Jindex[j_counter];
 				
 						int Lindex = data_seq[i].aminoacide.length() - minL;
-						int VJindex=Lsize+v_in*J_indexes->size() + j_in;
 						int L = data_seq[i].aminoacide.length();
 						double q = 1;
 
 						for (int k = 0; k < L; k++){
 							int aa_index = data_seq[i].aminoacide_indexes[k];
-							double h = q_ilA[aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k] + alpha*F[Lsize + VJsize + aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
+							double h = q_ilA.get(aa_index,Lindex,k) + alpha*F[Lsize + VJsize + aa_index*(maxL - minL + 1)*maxL + Lindex*maxL + k];
 							if (h < 0)
 								h = 0;
 							q *= h;
 						}
-						q*=(q_VJ[v_in*J_indexes->size() + j_in]+alpha*F[Lsize+v_in*J_indexes->size() + j_in]) * (q_L[data_seq[i].aminoacide.length() - minL]+alpha*F[data_seq[i].aminoacide.length() - minL]);
+						q*=(q_VJ.get(v_in,j_in)+alpha*F[Lsize+v_in*J_indexes->size() + j_in]) * (q_L[data_seq[i].aminoacide.length() - minL]+alpha*F[data_seq[i].aminoacide.length() - minL]);
 						
 						if (q <= 0 || Z<=0)
 							likehood = -99999999999;
@@ -513,19 +583,20 @@ double SelectionModel::optimizeStep(SequenceVector &gen_seq,SequenceVector &data
 			if (i<Lsize + VJsize) {
 				if (F[i]<0)
 				{
-					double newUpLimit = q_VJ[i - Lsize] / (-F[i]);
+					double newUpLimit = q_VJ.data[i - Lsize] / (-F[i]);
 					if (newUpLimit < b) b = newUpLimit;
 				}
 				continue;
 			}
 			if (F[i]<0)
 			{
-				double newUpLimit = q_ilA[i - Lsize - VJsize] / (-F[i]);
-				if (newUpLimit < b) b = newUpLimit;
+				double newUpLimit = q_ilA.data[i - Lsize - VJsize] / (-F[i]);
+				if (newUpLimit < b) 
+					b = newUpLimit;
 			}
 		}
 	}
-	double eps = (b - a) / 1000;
+	double eps = (b - a) / ScalarOptimizeN;
 	printf("\n ->>b=%f \n",b);
 	while(abs(b-a)>eps){
 		double x1=b-(b-a)/phi;
@@ -566,11 +637,11 @@ double SelectionModel::Q(const Sequence &seq){
 	int v=seq.Vindex[0];
 	int j=seq.Jindex[0];
 	int Lindex=seq.aminoacide.length()-minL;
-	double q=q_VJ[v*J_indexes->size()+j]*q_L[seq.aminoacide.length()-minL];
+	double q=q_VJ.get(v,j)*q_L[seq.aminoacide.length()-minL];
 	
 	for(int i=0;i<seq.aminoacide.length();i++){
 		int aa_index=seq.aminoacide_indexes[i];
-		q*=q_ilA[aa_index*(maxL-minL+1)*maxL+Lindex*maxL+i];
+		q*=q_ilA.get(aa_index,Lindex,i);
 	}
 	return q/Z;
 }
@@ -660,43 +731,6 @@ void SelectionModel::evalf_gen_Ldistribution(const SequenceVector &gen_seq, vect
 	delete[] out;
 }
 
-void SelectionModel::evalf_gen_VJdistribution(const SequenceVector &gen_seq, vector<double>& VJ_distribution){
-	std::fill(std::begin(VJ_distribution), std::end(VJ_distribution), 0);
-
-	double sum=0;
-	for(int i=0;i<gen_seq.size();i++){
-		if(gen_seq[i].valid){
-			int vindex=gen_seq[i].Vindex[0];
-			int jindex=gen_seq[i].Jindex[0];
-			double q=Q(gen_seq[i]);
-			VJ_distribution[vindex*J_indexes->size()+jindex]+=q;
-			sum+=q;
-		}
-	}
-	for(int i=0;i<V_indexes->size()*J_indexes->size();i++){
-		VJ_distribution[i]/=sum;
-	}
-}
-
-void SelectionModel::evalf_gen_AAdistribution(const SequenceVector &gen_seq, vector<double>& AA_distribution){
-	std::fill(std::begin(AA_distribution),std::end(AA_distribution),0);
-
-	double sum=0;
-	for(int i=0;i<gen_seq.size();i++){
-		if(gen_seq[i].valid){
-			double q=Q(gen_seq[i]);
-			int L=gen_seq[i].aminoacide.size();
-			for(int j=0;j<L;j++){
-				AA_distribution[gen_seq[i].aminoacide_indexes[j]*(maxL-minL+1)*maxL+(L-minL)*maxL+j]+=q;
-			}
-			sum+=q;
-		}
-	}
-	for(int i=0;i<aminoAcidIndexes.size()*maxL*(maxL-minL+1);i++){
-		AA_distribution[i]/=sum;
-	}
-}
-
 double SelectionModel::evalf_Z(const SequenceVector &gen_seq){
 	double sum=0;
 	for(int i=0;i<gen_seq.size();i++){
@@ -706,11 +740,11 @@ double SelectionModel::evalf_Z(const SequenceVector &gen_seq){
 			int v=gen_seq[i].Vindex[0];
 			int j=gen_seq[i].Jindex[0];
 			int Lindex=gen_seq[i].aminoacide.length()-minL;
-			double q=q_VJ[v*J_indexes->size()+j]*q_L[gen_seq[i].aminoacide.length()-minL];
+			double q=q_VJ.get(v,j)*q_L[gen_seq[i].aminoacide.length()-minL];
 	
 			for(int k=0;k<gen_seq[i].aminoacide.length();k++){
 				int aa_index=gen_seq[i].aminoacide_indexes[k];
-				q*=q_ilA[aa_index*(maxL-minL+1)*maxL+Lindex*maxL+k];
+				q*=q_ilA.get(aa_index,Lindex,k);
 			}
 			sum+=q;
 		}

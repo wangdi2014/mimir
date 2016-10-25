@@ -180,13 +180,40 @@ void writeToSingleJson(SelectionModel &model,char* path){
 	file.close();
 }
 
-
-int main(int argc, char* argv[])
-{
+void test() {
 	vector<Sequence> gen;
 	vector<Sequence> data;
-	
+
+	cout << "start parsing data file\n";
+	parse_gen_file("C://immunology//github//mimir//build//Debug//gen//Test", data);
+	cout << "start parsing gen file\n";
+	parse_gen_file("C://immunology//github//mimir//build//Debug//gen//TestExp", gen);
+	float w = sum / gen.size();
+	for (int i = 0;i<gen.size();i++)
+		gen[i].W_count = w;
+
+	SelectionModel* S = new SelectionModel();
+	cout << "start fiting\n";
+	S->fit(data, gen, 100,true);
+	cout << "fit done";
+
+	//for(int i=0;i<8;i++)
+	//writeClusterToSingleJson(*S,("C://immunology//github//mimir//build//Debug//cluster"+to_string(i)+".json"),i);
+	//writeP_genToSingleJson(*S,"C://immunology//github//mimir//build//Debug//Pgen.json");
+	writeToSingleJson(*S, "C://immunology//github//mimir//build//Debug//out_test.json");
+}
+int main(int argc, char* argv[])
+{
+	//test();
+	//return 0;
+	vector<Sequence> gen;
+	vector<Sequence> data;
+	cout << argv[1];
+	cout << "\n";
+	cout << argv[2];
+	cout << "\n";
 	cout<<"start parsing data file\n";
+	
 	parse_data_file(argv[1],data);
 	cout<<"start parsing gen file\n";
 	parse_gen_file(argv[2],gen);
